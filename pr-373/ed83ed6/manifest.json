@@ -1,0 +1,39 @@
+{
+  "summary": "新增 MAGPIE_PUBLIC_URL：设置页「关于」里显示的网关地址、网关页顶部的地址（含复制按钮）、接入区的 Base URL 与示例片段，以及写进各 Agent 配置的地址都改用它；未设置时行为与之前完全一样。",
+  "scenes": [
+    {
+      "title": "设置页显示的网关地址",
+      "shots": [
+        {
+          "file": "01-settings-gateway-address.png",
+          "caption": "设置 → 关于：各 Agent 指向的网关地址及其复制按钮",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "网关页显示的地址与接入片段",
+      "shots": [
+        {
+          "file": "02-gateway-card-url.png",
+          "caption": "网关页顶部的网关地址与复制按钮",
+          "width": 2560
+        },
+        {
+          "file": "03-gateway-connect-base-url.png",
+          "caption": "接入区的 Base URL、密钥、模型与 Shell 示例片段",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙盒没有设置 MAGPIE_PUBLIC_URL（界面上也没有设置它的入口），所以设置页和网关页显示的仍会是本机回环地址 http://127.0.0.1:3430，公开地址只有在容器/反向代理部署里设置该环境变量后才会出现；写进 Agent 配置文件的地址（如 Codex config.toml）同样只能靠环境变量才变化，界面里看不到。",
+  "interactive": true,
+  "pages": 3
+}

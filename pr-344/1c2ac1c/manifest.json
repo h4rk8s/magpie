@@ -1,0 +1,76 @@
+{
+  "summary": "网关页新增「网关密钥」区块（为每个客户端创建、复制、重命名、启停、轮换、移除命名密钥），接入区可按本机/局域网地址和已启用密钥生成带密钥的示例；用量 › 概览新增按网关密钥的分组，用量 › 请求新增密钥筛选；设置页的局域网部分去掉了重复的 API key 行，只保留开关与地址。",
+  "scenes": [
+    {
+      "title": "开启局域网共享后网关出现密钥区块",
+      "shots": [
+        {
+          "file": "01-settings-lan-share.png",
+          "caption": "设置 › 局域网：共享开关与说明",
+          "width": 2560
+        },
+        {
+          "file": "02-settings-lan-on.png",
+          "caption": "开启共享后的局域网设置",
+          "width": 2560
+        },
+        {
+          "file": "03-gateway-keys-block.png",
+          "caption": "网关页的网关密钥区块",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "新建网关密钥并在接入中选用",
+      "shots": [
+        {
+          "file": "04-gateway-keys-list.png",
+          "caption": "网关密钥列表",
+          "width": 2560
+        },
+        {
+          "file": "05-connect-address-menu.png",
+          "caption": "接入：地址下拉",
+          "width": 2560
+        },
+        {
+          "file": "06-connect-key-menu.png",
+          "caption": "接入：网关密钥下拉",
+          "width": 2560
+        },
+        {
+          "file": "07-connect-example.png",
+          "caption": "接入：示例中使用的密钥",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "用量页的按密钥分组与筛选入口",
+      "shots": [
+        {
+          "file": "08-usage-overview.png",
+          "caption": "用量 › 概览",
+          "width": 2560
+        },
+        {
+          "file": "09-usage-requests.png",
+          "caption": "用量 › 请求的筛选行",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [
+    "新建网关密钥并在接入中选用 · click .sess-menu .pm-item: nothing visible matches .sess-menu .pm-item with \"笔记本\" (0 in the page)"
+  ],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "描述里把这个区块写作「Gateway → API keys」，界面上的标题实际是「网关密钥」（Gateway keys），用量页同一区块也叫「网关密钥」；描述的其它界面承诺（设置页去掉重复 API key 行、按客户端密钥统计用量、接入示例可选用地址与密钥）diff 都有对应实现。",
+  "unseen": "沙盒里已经发出的调用都来自本机回环且没有携带命名密钥，属于未归属记录，所以用量 › 概览的「网关密钥」分组、用量 › 请求的密钥筛选（以及 CSV 的 caller_key 列）在产生按密钥归属的调用前不会出现，只能展示它们所在的页面；轮换/移除后接入示例自动刷新、停用或移除密钥后局域网客户端被拒等行为，也需要按密钥发起的真实请求才能看到。另外接入区的地址下拉只在开启局域网共享且本机有局域网地址时出现，若沙盒没有局域网地址则看不到。",
+  "interactive": true,
+  "pages": 4
+}

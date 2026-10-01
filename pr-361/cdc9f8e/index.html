@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#361 界面预览 · cdc9f8e</title>
+<style>:root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1d1d1f;--muted:#6e6e73;--card:#fff;--line:#e5e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f2f2f4;--muted:#9a9aa0;--card:#1c1c1f;--line:#2c2c30}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.m{color:var(--muted);font-size:13px;margin:0 0 20px}
+video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+a{color:inherit}</style>
+<main><h1>#361 界面预览</h1><p class="m">commit cdc9f8e · <a href="https://github.com/yetone/magpie/pull/361">回到 PR</a> · 用量记录多了 route_id：用量页「请求」列表里带路由的那几条，时间变成可点按钮（悬停提示「查看路由」），点开直接跳到路由页看该请求的路由过程；路由页的请求说明栏多了「查看用量」，点一下回到按该路由筛选的用量列表，工具栏显示「请求 #… · 清除筛选」，点它清除筛选；CSV 导出也多了一列 route_id。</p>
+<figure><video src="preview.mp4" controls autoplay muted playsinline poster="poster.png"></video><figcaption>红线是鼠标走过的轨迹，红色圆环是一次点击；底部文字是这一步在做什么。空格暂停，← → 逐段查看。</figcaption></figure>
+<figure><img src="01-usage-requests.png" alt="用量页的「请求」列表"><figcaption>用量 → 路由：点请求时间看这条请求怎么被路由 · 用量页的「请求」列表</figcaption></figure>
+<figure><img src="02-usage-time-hover.png" alt="悬停请求时间时的样子"><figcaption>用量 → 路由：点请求时间看这条请求怎么被路由 · 悬停请求时间时的样子</figcaption></figure>
+<figure><img src="03-routing-for-request.png" alt="路由页打开的这条请求的完整过程"><figcaption>用量 → 路由：点请求时间看这条请求怎么被路由 · 路由页打开的这条请求的完整过程</figcaption></figure>
+<figure><img src="04-routing-log-head.png" alt="路由页最近一个请求的说明栏"><figcaption>路由 → 用量：从路由回看该路由的用量记录 · 路由页最近一个请求的说明栏</figcaption></figure>
+<figure><img src="05-usage-route-rows.png" alt="用量页：注意工具栏与记录列表"><figcaption>路由 → 用量：从路由回看该路由的用量记录 · 用量页：注意工具栏与记录列表</figcaption></figure>
+<figure><img src="06-usage-all-rows.png" alt="清除路由筛选后的用量列表"><figcaption>路由 → 用量：从路由回看该路由的用量记录 · 清除路由筛选后的用量列表</figcaption></figure>
+</main></html>

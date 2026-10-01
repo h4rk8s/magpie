@@ -1,0 +1,39 @@
+{
+  "summary": "设置页「WebDAV / S3 同步」一行关闭状态的说明文字不再写死，而是按视图里的 keys/agents/library 开关拼出（默认三者都开，所以文字变成「供应商（含 API Key）、设置、Profile、agent 的模型、资源库」）；同时设置页每次重绘（返回设置页、窗口重新获得焦点）都会重新读取 WebDAV 配置，而不是继续用启动时读到的那份。",
+  "scenes": [
+    {
+      "title": "设置页的 WebDAV / S3 同步行",
+      "shots": [
+        {
+          "file": "01-settings-sync-off-row.png",
+          "caption": "关闭状态下「WebDAV / S3 同步」一行的说明文字",
+          "width": 2560
+        },
+        {
+          "file": "02-sync-form-ticks.png",
+          "caption": "同步表单里的勾选项",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "离开再回到设置页",
+      "shots": [
+        {
+          "file": "03-settings-sync-after-return.png",
+          "caption": "返回设置页后重新绘制的同步行",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "「说明只列出开启的项」这一效果（供应商不含 API Key、agent 的模型或资源库被关掉时的文案）以及「在终端改了 magpie webdav 后回到设置页，行状态和表单勾选跟着变」这一修复本身，沙箱里看不到：这里同步始终未配置（关闭、三项默认全开），也没有可以改 sync.json 的终端操作，因此只有默认（全开）的那句文案能出现；带开关差异的状态需要外部改动 WebDAV/S3 配置才能显示。",
+  "interactive": true,
+  "pages": 3
+}

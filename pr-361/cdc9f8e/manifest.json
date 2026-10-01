@@ -1,0 +1,54 @@
+{
+  "summary": "用量记录多了 route_id：用量页「请求」列表里带路由的那几条，时间变成可点按钮（悬停提示「查看路由」），点开直接跳到路由页看该请求的路由过程；路由页的请求说明栏多了「查看用量」，点一下回到按该路由筛选的用量列表，工具栏显示「请求 #… · 清除筛选」，点它清除筛选；CSV 导出也多了一列 route_id。",
+  "scenes": [
+    {
+      "title": "用量 → 路由：点请求时间看这条请求怎么被路由",
+      "shots": [
+        {
+          "file": "01-usage-requests.png",
+          "caption": "用量页的「请求」列表",
+          "width": 2560
+        },
+        {
+          "file": "02-usage-time-hover.png",
+          "caption": "悬停请求时间时的样子",
+          "width": 2560
+        },
+        {
+          "file": "03-routing-for-request.png",
+          "caption": "路由页打开的这条请求的完整过程",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "路由 → 用量：从路由回看该路由的用量记录",
+      "shots": [
+        {
+          "file": "04-routing-log-head.png",
+          "caption": "路由页最近一个请求的说明栏",
+          "width": 2560
+        },
+        {
+          "file": "05-usage-route-rows.png",
+          "caption": "用量页：注意工具栏与记录列表",
+          "width": 2560
+        },
+        {
+          "file": "06-usage-all-rows.png",
+          "caption": "清除路由筛选后的用量列表",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙盒里这几次请求的路由都还在历史里，所以看不到路由已被清理时点时间给出的「此请求的路由历史已不可用。」；也没有本次改动之前、没有 route_id 的旧用量记录（那种行的时间不可点），以及需要翻归档 JSONL/gzip、超出每日 2000 行上限才能找到的路由。CSV 导出新增的 route_id 列是下载文件，页面内截不到。",
+  "interactive": true,
+  "pages": 2
+}

@@ -1,0 +1,34 @@
+{
+  "summary": "供应商页里自定义供应商的编辑器在「代理」下面多了一行「联网搜索 · 自己能联网搜索」开关（带中文说明），只在填了 Anthropic 或 Responses 地址时出现，保存时会把 searches 一起提交；CLI 也多了 search=yes|no。",
+  "scenes": [
+    {
+      "title": "自定义供应商编辑器里的「联网搜索」一行",
+      "shots": [
+        {
+          "file": "01-custom-editor-opened.png",
+          "caption": "新建自定义供应商时的编辑器",
+          "width": 1296
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [
+    "自定义供应商编辑器里的「联网搜索」一行 · click .editor details.more summary: nothing visible matches .editor details.more summary with \"更多端点\" (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · click #addProvider: nothing visible matches #addProvider (1 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · click .editor details.more summary: nothing visible matches .editor details.more summary with \"更多端点\" (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · click #addProvider: nothing visible matches #addProvider (1 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · click .editor details.more summary: nothing visible matches .editor details.more summary with \"更多端点\" (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · type xpath=//label[contains(., \"Anthropic 地址\")]/following-sibling::div[1]//input: nothing visible matches xpath=//label[contains(., \"Anthropic 地址\")]/following-sibling::div[1]//input (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · shot .editor label.tick:has-text(\"自己能联网搜索\"): nothing visible matches .editor label.tick:has-text(\"自己能联网搜索\") (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · click .editor label.tick: nothing visible matches .editor label.tick with \"自己能联网搜索\" (0 in the page)",
+    "自定义供应商编辑器里的「联网搜索」一行 · shot .editor label.tick:has-text(\"自己能联网搜索\"): nothing visible matches .editor label.tick:has-text(\"自己能联网搜索\") (0 in the page)"
+  ],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "描述的表里把这行写在「面板」下，实际是供应商页的自定义供应商编辑器（点「＋ 添加供应商」或点某个自定义供应商后打开的编辑界面）；面板（菜单栏图标那一页）里并没有 provider 编辑器，所以在面板里找不到这一行。",
+  "unseen": "沙盒里只有 DeepSeek 一个预设供应商，没有自定义中转，所以要先新建一个自定义供应商才能看到这一行，也填不到真实的中转地址和「已登录账号没有这一行」的对照。勾选后保存是否真的发出 searches:true、重开编辑器是否仍是勾上的，只能靠重新打开编辑器或看真实请求验证，截图只拍到勾选状态本身（本次不保存）。真正的 WebSearch / Codex web_search 原样透传要打到真实 Anthropic 中转，这里看不到；CLI 的 search=yes|no 和 magpie provider <id> 里的 search by itself 是终端输出，不在这些页面里。",
+  "interactive": true,
+  "pages": 1
+}

@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#307 界面预览 · 4b58969</title>
+<style>:root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1d1d1f;--muted:#6e6e73;--card:#fff;--line:#e5e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f2f2f4;--muted:#9a9aa0;--card:#1c1c1f;--line:#2c2c30}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.m{color:var(--muted);font-size:13px;margin:0 0 20px}
+video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+a{color:inherit}</style>
+<main><h1>#307 界面预览</h1><p class="m">commit 4b58969 · <a href="https://github.com/yetone/magpie/pull/307">回到 PR</a> · 设置页「WebDAV / S3 同步」一行关闭状态的说明文字不再写死，而是按视图里的 keys/agents/library 开关拼出（默认三者都开，所以文字变成「供应商（含 API Key）、设置、Profile、agent 的模型、资源库」）；同时设置页每次重绘（返回设置页、窗口重新获得焦点）都会重新读取 WebDAV 配置，而不是继续用启动时读到的那份。</p>
+<figure><video src="preview.mp4" controls autoplay muted playsinline poster="poster.png"></video><figcaption>红线是鼠标走过的轨迹，红色圆环是一次点击；底部文字是这一步在做什么。空格暂停，← → 逐段查看。</figcaption></figure>
+<figure><img src="01-settings-sync-off-row.png" alt="关闭状态下「WebDAV / S3 同步」一行的说明文字"><figcaption>设置页的 WebDAV / S3 同步行 · 关闭状态下「WebDAV / S3 同步」一行的说明文字</figcaption></figure>
+<figure><img src="02-sync-form-ticks.png" alt="同步表单里的勾选项"><figcaption>设置页的 WebDAV / S3 同步行 · 同步表单里的勾选项</figcaption></figure>
+<figure><img src="03-settings-sync-after-return.png" alt="返回设置页后重新绘制的同步行"><figcaption>离开再回到设置页 · 返回设置页后重新绘制的同步行</figcaption></figure>
+</main></html>

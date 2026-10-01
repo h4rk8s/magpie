@@ -1,0 +1,64 @@
+{
+  "summary": "「用量」页的「请求」标签新增四个汇总卡片、按模型/供应商/Agent 拆分的堆叠趋势图与对应的排行（点击可筛选），行内可展开请求详情（状态、请求 ID、端点、会话 ID 与内容），请求行新增数据来源/账号徽标、耗时配色与「≈」估算，默认期间改为「今天」，用量页头部新增立即刷新与刷新周期选择；托盘面板新增「用量」标签，显示同样口径的汇总、紧凑图表与排行。",
+  "scenes": [
+    {
+      "title": "请求页的汇总、趋势图与排行",
+      "shots": [
+        {
+          "file": "01-requests-dashboard.png",
+          "caption": "「请求」页：期间、四项汇总、趋势图、排行与请求列表",
+          "width": 2560
+        },
+        {
+          "file": "02-trend-tooltip.png",
+          "caption": "趋势图列上的提示框",
+          "width": 2560
+        },
+        {
+          "file": "03-rank-filter.png",
+          "caption": "按排行里点中的一项筛选后的列表与汇总",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "请求详情与刷新周期",
+      "shots": [
+        {
+          "file": "04-refresh-every-menu.png",
+          "caption": "「刷新周期」打开的菜单",
+          "width": 2560
+        },
+        {
+          "file": "05-request-row-detail.png",
+          "caption": "展开的请求详情：状态、请求 ID、端点、会话 ID 与内容部分",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "托盘面板的用量标签",
+      "shots": [
+        {
+          "file": "06-panel-usage.png",
+          "caption": "面板的「用量」标签：期间、四项汇总、紧凑趋势图与排行",
+          "width": 2560
+        },
+        {
+          "file": "07-panel-usage-picked.png",
+          "caption": "在面板里点中一个供应商之后",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "描述把 Cowork 会话、Sessions 的 via、CSV 里的 rejected 列、面板窄宽时强制经典滚动条、插件页的 Source/源码等也算作本次改动的一部分，但所给 diff 里看不到这些界面实现（部分可能在被截断的后端改动里）；本次能看到的界面改动只有用量页的「请求」标签、用量页头部和托盘面板的新「用量」标签。",
+  "unseen": "沙盒只有 DeepSeek（无任何订阅账号）且没有本地会话文件，所以本地会话行、官方/订阅/本地会话徽标、本地拒绝记录以及详情里从 Agent 会话文件读取的输入输出内容都看不到（只会显示找不到会话文件的原因）；模型排行只有 DeepSeek 的模型，供应商排行只有一项；也没有配额百分比窗口（DeepSeek 只有余额）。",
+  "interactive": true,
+  "pages": 2
+}
