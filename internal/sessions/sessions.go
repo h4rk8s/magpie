@@ -111,6 +111,8 @@ type Session struct {
 	Carry []Carry `json:"carry,omitempty"`
 	// Transcript says its conversation can be read (TranscriptOf)
 	Transcript bool `json:"transcript,omitempty"`
+	// UsageIncomplete means native history cannot establish a complete total.
+	UsageIncomplete bool `json:"usage_incomplete,omitempty"`
 	// WSL is the WSL distro the session ran in, its files read through
 	// \\wsl.localhost (see wsl.go); "" for this computer's own
 	WSL string `json:"wsl,omitempty"`
@@ -158,6 +160,9 @@ type state struct {
 	Total *Tokens `json:"total,omitempty"`
 	// Codex: the model_provider its session_meta names (codex_provider.go)
 	Provider string `json:"provider,omitempty"`
+	// Reasonix's native turn ledger uses a sequence across all turns.
+	ReasonixSeq     uint64 `json:"reasonix_seq,omitempty"`
+	UsageIncomplete bool   `json:"usage_incomplete,omitempty"`
 	// Pi: in a forked session, the time it was forked; the lines before
 	// it are the copy of the session it was forked from
 	Since time.Time `json:"since,omitzero"`
@@ -411,7 +416,7 @@ func allFiles() []file {
 	var out []file
 	for _, fs := range [][]file{callFiles(), openCodeFiles(), piFiles(),
 		wslFiles("pi"), zcodeFiles(), dshFiles(), clineFiles(), ccFiles("qoder", QoderDir("qoder")), ccFiles("qoder-cn", QoderDir("qoder-cn")),
-		grokFiles(), workbuddyFiles(), droidFiles(), ompFiles(), cursorFiles(), hermesFiles(), almaFiles()} {
+		grokFiles(), workbuddyFiles(), droidFiles(), ompFiles(), cursorFiles(), hermesFiles(), almaFiles(), reasonixFiles()} {
 		out = append(out, fs...)
 	}
 	return out
@@ -421,6 +426,9 @@ func allFiles() []file {
 // Codex's, and the other agents' where they keep sessions on this computer.
 func Dirs() []string {
 	out := []string{ClaudeDir(), CodexDir()}
+	if len(reasonixFiles()) != 0 {
+		out = append(out, ReasonixDir())
+	}
 	for _, d := range []struct{ dir, sessions string }{
 		{OpenCodeDir(), OpenCodeDir()},
 		{PiDir(), PiDir()},
@@ -659,7 +667,7 @@ func refresh(want, all []file) {
 		if f.cold {
 			continue // in a stopped WSL distro: what was read of it stands
 		}
-		if s := cache[f.path]; s == nil || s.Size != f.size || s.Mod != f.mod.UnixNano() || (f.agent == "hermes" && (f.hermes == nil || f.hermes.revision == "" || s.DBRevision != f.hermes.revision)) || (f.agent == "alma" && s.DBRevision != f.rev) {
+		if s := cache[f.path]; s == nil || s.Size != f.size || s.Mod != f.mod.UnixNano() || (f.agent == "hermes" && (f.hermes == nil || f.hermes.revision == "" || s.DBRevision != f.hermes.revision)) || ((f.agent == "alma" || f.agent == "reasonix") && s.DBRevision != f.rev) || (f.agent == "reasonix" && s.ID != f.sid) {
 			todo = append(todo, f)
 		}
 	}
@@ -911,6 +919,7 @@ func assemble(fs []file, price func(string) *catalog.Price) (Session, bool) {
 		if st == nil {
 			continue
 		}
+		s.UsageIncomplete = s.UsageIncomplete || st.UsageIncomplete
 		if f.main {
 			if s.Cwd == "" {
 				s.Cwd = st.Cwd
@@ -980,6 +989,9 @@ func assemble(fs []file, price func(string) *catalog.Price) (Session, bool) {
 	}
 	if !s.ReadOnly {
 		s.Resume = resumeCommand(s.WSL, s.Agent, s.ID, s.Cwd)
+		if s.Agent == "reasonix" && runtime.GOOS != "windows" {
+			s.Resume = "reasonix --resume " + shellQuote(s.Path)
+		}
 	}
 	s.Carry, s.Transcript = carries(s), HasTranscript(s.Agent)
 	return s, true
@@ -1013,6 +1025,8 @@ func parserFor(agent string) sessionParser {
 		return sessionParser{whole: parseCursor}
 	case "codex":
 		return sessionParser{line: codexBody}
+	case "reasonix":
+		return sessionParser{line: reasonixLine}
 	case "pi", "omp":
 		return sessionParser{line: piParse}
 	case "workbuddy":
@@ -1024,6 +1038,9 @@ func parserFor(agent string) sessionParser {
 
 // parse reads a file on from where old left it, or from the start.
 func parse(f file, old *state) *state {
+	if f.agent == "reasonix" && old != nil && old.ID != f.sid {
+		old = nil
+	}
 	// Summary caches contain aggregates only. After a restart, a changed
 	// Codex file rebuilds its transient response index from the source.
 	if f.agent == "codex" && old != nil && old.Codex == nil {
@@ -1052,6 +1069,12 @@ func parse(f file, old *state) *state {
 	if f.agent == "codex" {
 		head = func(b []byte) bool { return codexHead(s, b, f.main) }
 	}
+	if f.agent == "reasonix" {
+		s.ID = f.sid
+		if !f.main {
+			head = reasonixUsageHead
+		}
+	}
 	off, err := scanAt(f.path, s.Off, head, func(b []byte, _, _ int64) bool {
 		parser.line(s, b, f.main)
 		return true
@@ -1061,6 +1084,9 @@ func parse(f file, old *state) *state {
 	}
 	if f.agent == "workbuddy" && s.Cwd == "" {
 		workbuddyMeta(s, f.path)
+	}
+	if f.agent == "reasonix" {
+		reasonixMetadata(s, f)
 	}
 	return s
 }

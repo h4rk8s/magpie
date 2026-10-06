@@ -10,7 +10,7 @@ const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
 const assets = path.resolve(__dirname, "../assets");
-const names = ["Pi", "WorkBuddy", "DeepSeek Harness", "Claude Code", "Codex", "omp", "OpenCode", "Qoder", "ZCode", "Claude Desktop", "Qoder CN", "Grok Build", "Kimi Code", "Cursor", "Zed"];
+const names = ["Pi", "WorkBuddy", "DeepSeek Harness", "Claude Code", "Codex", "omp", "OpenCode", "Qoder", "ZCode", "Claude Desktop", "Qoder CN", "Grok Build", "Kimi Code", "Cursor", "Zed", "Reasonix Studio"];
 const agents = Object.fromEntries(names.map((n, i) => ["a" + i, n]));
 const iso = (d) => [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
 const today = iso(new Date());
@@ -41,7 +41,7 @@ function serve(lang) {
 }
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
-  for (const lang of ["en", "zh"]) {
+  for (const lang of ["en", "zh", "ja", "de"]) {
     test(`${engine} ${lang}: many agents don't widen Usage › Sessions`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
@@ -81,9 +81,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const lb = await last.boundingBox();
         await page.mouse.click(lb.x + lb.width / 2, lb.y + lb.height / 2);
       }
-      await page.waitForFunction(() => document.querySelector("#sessAgent .opt.on")?.textContent === "Zed");
+      await page.waitForFunction(() => document.querySelector("#sessAgent .opt.on")?.textContent === "Reasonix Studio");
       await settle();
-      assert.equal(await strip.getByRole("button", { pressed: true }).textContent(), "Zed", "the reused button exposes its new selection");
+      assert.equal(await strip.getByRole("button", { pressed: true }).textContent(), "Reasonix Studio", "the reused button exposes its new selection");
       assert.equal(await all.getAttribute("aria-pressed"), "false", "the previous selection is cleared");
       const on = await strip.locator(".opt.on").boundingBox();
       const sb = await strip.boundingBox();

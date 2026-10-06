@@ -4,6 +4,8 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
+    "Partial usage history": "用量历史不完整",
+    "Only retained native usage is counted; older records are unavailable.": "仅统计现存的本地用量记录，缺失的历史记录无法计入。",
     "No installed fonts found": "未找到已安装字体",
     "Interface font": "界面字体",
     "Code font": "代码字体",
@@ -3530,6 +3532,8 @@ const I18N = {
     "credits": "积分",
   },
   ja: {
+    "Partial usage history": "使用履歴が不完全です",
+    "Only retained native usage is counted; older records are unavailable.": "保存されているローカル使用記録のみを集計します。失われた履歴は含まれません。",
     "No installed fonts found": "インストール済みフォントが見つかりません",
     "Interface font": "インターフェースのフォント",
     "Code font": "コードのフォント",
@@ -7041,6 +7045,8 @@ const I18N = {
     "Main navigation": "メインナビゲーション",
   },
   de: {
+    "Partial usage history": "Unvollständiger Nutzungsverlauf",
+    "Only retained native usage is counted; older records are unavailable.": "Nur erhaltene lokale Nutzungsdaten werden gezählt; ältere Datensätze sind nicht verfügbar.",
     "No installed fonts found": "Keine installierten Schriften gefunden",
     "Interface font": "Oberflächenschrift",
     "Code font": "Codeschrift",

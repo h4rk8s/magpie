@@ -23,12 +23,13 @@ type Stats struct {
 
 // Summary is one session's share of a range.
 type Summary struct {
-	Key   string    `json:"key"` // agent:id as its files are grouped, for Get
-	Agent string    `json:"agent"`
-	ID    string    `json:"id"`
-	Cwd   string    `json:"cwd"`
-	Title string    `json:"title"`
-	Last  time.Time `json:"last"`
+	Key             string    `json:"key"` // agent:id as its files are grouped, for Get
+	Agent           string    `json:"agent"`
+	ID              string    `json:"id"`
+	Cwd             string    `json:"cwd"`
+	Title           string    `json:"title"`
+	UsageIncomplete bool      `json:"usage_incomplete,omitempty"`
+	Last            time.Time `json:"last"`
 	Tokens
 	Cost   float64  `json:"cost"`
 	Priced bool     `json:"priced"` // every model it used has a price
@@ -294,7 +295,7 @@ func statsAt(days int, now time.Time) Stats {
 			continue
 		}
 		sum := Summary{Key: key, Agent: s.Agent, ID: s.ID, Cwd: cmp.Or(folder[key], s.Cwd), Title: clip(s.Title, 160),
-			Last: s.Last, Priced: true, Active: sh.active / 1000, Models: []string{}, Days: []int{},
+			Last: s.Last, Priced: true, Active: sh.active / 1000, Models: []string{}, Days: []int{}, UsageIncomplete: s.UsageIncomplete,
 			Prompts: sh.prompts, Replies: sh.replies, tools: sh.tools, skills: sh.skills, skillLast: sh.skillLast,
 			perDay: map[int]*summaryDay{}}
 		for _, n := range sh.tools {

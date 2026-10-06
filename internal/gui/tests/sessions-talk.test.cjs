@@ -39,6 +39,7 @@ function serve(lang, calls) {
       sess("pi", "p-2", "an older one", 50, { transcript: true, carry: [{ agent: "omp", command: FORK.replace("p-1", "p-2") }] }),
     ],
     opencode: [{ ...sess("opencode", "o-1", "an opencode chat", 8), deletable: false, resume: "opencode -s o-1" }],
+    reasonix: [{ ...sess("reasonix", "r-1", "a Reasonix chat", 8), deletable: false, transcript: true, usage_incomplete: true, resume: "reasonix --resume '/work/session.jsonl'" }],
   };
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
   return async (route) => {
@@ -51,11 +52,13 @@ function serve(lang, calls) {
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, window: true } });
     if (url.pathname === "/api/sessions/manage") {
-      const agent = url.searchParams.get("agent") === "opencode" ? "opencode" : "pi";
+      const requested = url.searchParams.get("agent");
+      const agent = requested === "opencode" || requested === "reasonix" ? requested : "pi";
       return json({
         agents: [
           { agent: "pi", count: store.pi.length, deletable: true, name: "Pi", icon: "pi" },
           { agent: "opencode", count: store.opencode.length, deletable: false, name: "OpenCode", icon: "opencode" },
+          { agent: "reasonix", count: store.reasonix.length, deletable: false, name: "Reasonix Studio", icon: "reasonix-color" },
         ],
         agent, sessions: store[agent], terminal: true, trash: [], trashDir: "~/trash",
       });
@@ -84,10 +87,14 @@ const words = {
     line: "Continue in omp", show: "Show conversation", hide: "Hide conversation", talk: "Conversation", you: "You", asst: "Assistant", call: "Tool call", result: "Tool result", thinking: "Thinking" },
   zh: { nav: "会话", carry: "换 Agent 继续", head: "换个 Agent 继续", copyNote: "复制命令", termNote: "在所选终端中打开",
     line: "用 omp 继续", show: "查看会话", hide: "收起会话", talk: "会话内容" },
+  ja: { nav: "セッション", carry: "別のエージェントで続ける", head: "別のエージェントで続ける", copyNote: "コマンドをコピー", termNote: "セッション用ターミナルで開く",
+    line: "omp で続ける", show: "会話を表示", hide: "会話を隠す", talk: "会話", partial: "使用履歴が不完全です" },
+  de: { nav: "Sitzungen", carry: "Fortsetzen in", head: "In einem anderen Agenten fortsetzen", copyNote: "Befehl kopieren", termNote: "Im Sitzungsterminal öffnen",
+    line: "In omp fortsetzen", show: "Unterhaltung anzeigen", hide: "Unterhaltung ausblenden", talk: "Unterhaltung", partial: "Unvollständiger Nutzungsverlauf" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
-  for (const lang of ["en", "zh"]) {
+  for (const lang of ["en", "zh", "ja", "de"]) {
     const w = words[lang];
     test(`${engine} ${lang}: a session's conversation is shown, and a Pi session is carried on in omp`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
@@ -188,9 +195,20 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await view.locator(".sess-detail").waitFor();
       assert.equal(await view.locator(".sess-talk-btn").count(), 0);
 
+      await view.locator(".sm-agents .opt", { hasText: "Reasonix Studio" }).click();
+      const rx = view.locator('.row.sm-sess[data-id="r-1"]');
+      await rx.waitFor();
+      const partial = w.partial || (lang === "zh" ? "用量历史不完整" : "Partial usage history");
+      assert((await rx.textContent()).includes(partial), "missing usage is visible, not presented as a complete zero");
+      await rx.locator(".who").click();
+      assert((await view.locator(".sess-detail").textContent()).includes("reasonix --resume"));
+      await view.locator(".sess-talk-btn").click();
+      await view.locator(".sess-talk .cx-part").first().waitFor();
+      assert(calls.some((c) => c.path === "transcript" && c.agent === "reasonix" && c.id === "r-1"));
+
       if (lang === "zh") {
         const missing = await page.evaluate(() => ["Continue in {agent}", "Continue in", "Continue this session in another agent", "Continue in another agent",
-          "Copy the command", "Conversation", "Show conversation", "Hide conversation", "Reading…"].filter((k) => !I18N.zh[k] || !I18N.ja[k] || !I18N.de[k]));
+          "Copy the command", "Conversation", "Show conversation", "Hide conversation", "Reading…", "Partial usage history", "Only retained native usage is counted; older records are unavailable."].filter((k) => !I18N.zh[k] || !I18N.ja[k] || !I18N.de[k]));
         assert.deepEqual(missing, [], "every string has its Chinese, Japanese and German");
       }
       assert.deepEqual(errors, []);
