@@ -1,0 +1,4 @@
+{"role":"user","content":"host instruction","host_authored":true,"createdAt":1791244800000}
+{"role":"user","content":"hello","createdAt":1791244801000}
+{"role":"assistant","content":"hello back","modelRef":"magpie/deepseek/deepseek-flash","createdAt":1791244802000}
+{"role":"assistant","content":"next","modelRef":"magpie/deepseek/deepseek-pro","createdAt":1791244803000}

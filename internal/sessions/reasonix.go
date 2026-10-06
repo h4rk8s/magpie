@@ -43,15 +43,29 @@ type reasonixMeta struct {
 	Updated time.Time `json:"updated_at"`
 }
 
+// Directory discovery does not open metadata or transcript files.
+func reasonixSessionDirs() []string {
+	root := ReasonixDir()
+	dirs := []string{filepath.Join(root, "sessions")}
+	projects, _ := SessionGlob(filepath.Join(root, "projects", "*", "sessions"))
+	dirs = append(dirs, projects...)
+	out := []string{}
+	for _, dir := range dirs {
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
+const reasonixRevision = "reasonix-models-v2:"
+
 // Legacy transcripts are JSONL messages; their .jsonl.meta sidecar supplies
 // identity, title and workspace. Usage lives in a separate .turns.jsonl ledger.
 // Neither daily global stats (no session id) nor event/DAG logs are transcripts.
 // v4/v5 framed stores require their own codec and are not read as legacy files.
 func reasonixFiles() []file {
-	root := ReasonixDir()
-	dirs := []string{filepath.Join(root, "sessions")}
-	projects, _ := SessionGlob(filepath.Join(root, "projects", "*", "sessions"))
-	dirs = append(dirs, projects...)
+	dirs := reasonixSessionDirs()
 	out := []file{}
 	chosen := map[string][]file{}
 	for _, dir := range dirs {
@@ -86,7 +100,7 @@ func reasonixFiles() []file {
 			}
 			key := "reasonix:" + m.ID
 			rev := sha256.Sum256(b)
-			f := file{agent: "reasonix", path: p, key: key, main: true, sid: m.ID, manifest: manifest, rev: hex.EncodeToString(rev[:])}
+			f := file{agent: "reasonix", path: p, key: key, main: true, sid: m.ID, manifest: manifest, rev: reasonixRevision + hex.EncodeToString(rev[:])}
 			if !stat(&f) {
 				continue
 			}
@@ -127,13 +141,15 @@ func reasonixSidecar(stem string) bool {
 }
 
 type reasonixMessage struct {
-	Role     string `json:"role"`
-	Content  string `json:"content"`
-	Thinking string `json:"reasoning_content"`
-	Name     string `json:"name"`
-	At       int64  `json:"createdAt"`
-	Local    bool   `json:"local_only"`
-	Tools    []struct {
+	Role         string `json:"role"`
+	ModelRef     string `json:"modelRef"`
+	HostAuthored bool   `json:"host_authored"`
+	Content      string `json:"content"`
+	Thinking     string `json:"reasoning_content"`
+	Name         string `json:"name"`
+	At           int64  `json:"createdAt"`
+	Local        bool   `json:"local_only"`
+	Tools        []struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"tool_calls"`
@@ -197,7 +213,7 @@ func reasonixLine(s *state, b []byte, main bool) {
 		return
 	}
 	var m reasonixMessage
-	if json.Unmarshal(b, &m) != nil || m.Local {
+	if json.Unmarshal(b, &m) != nil || m.Local || m.HostAuthored {
 		return
 	}
 	if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
@@ -205,6 +221,17 @@ func reasonixLine(s *state, b []byte, main bool) {
 	}
 	if m.Role == "user" && s.Title == "" {
 		s.Title = title(m.Content)
+	}
+	// A model identity is useful even when this release stores no session
+	// token counts. Keep presence separate from usage; never infer tokens.
+	model := strings.TrimPrefix(m.ModelRef, "magpie/")
+	if m.Role == "assistant" && model != "" {
+		if s.Models == nil {
+			s.Models = map[string]Tokens{}
+		}
+		if _, ok := s.Models[model]; !ok {
+			s.Models[model] = Tokens{}
+		}
 	}
 	if m.At <= 0 {
 		return
@@ -217,6 +244,14 @@ func reasonixLine(s *state, b []byte, main bool) {
 	}
 	if m.Role == "assistant" {
 		d.Replies++
+		if model != "" {
+			if d.Models == nil {
+				d.Models = map[string]Tokens{}
+			}
+			if _, ok := d.Models[model]; !ok {
+				d.Models[model] = Tokens{}
+			}
+		}
 		for _, tool := range m.Tools {
 			s.tool(at, tool.Name, "")
 		}

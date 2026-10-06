@@ -11,12 +11,16 @@ const { chromium, webkit } = require("playwright");
 
 const assets = path.resolve(__dirname, "../assets");
 const names = ["Pi", "WorkBuddy", "DeepSeek Harness", "Claude Code", "Codex", "omp", "OpenCode", "Qoder", "ZCode", "Claude Desktop", "Qoder CN", "Grok Build", "Kimi Code", "Cursor", "Zed", "Reasonix Studio"];
-const agents = Object.fromEntries(names.map((n, i) => ["a" + i, n]));
+const agentID = i => i === names.length - 1 ? "reasonix" : "a" + i;
+const agents = Object.fromEntries(names.map((n, i) => [agentID(i), n]));
+const fixture = require("node:fs").readFileSync(path.resolve(__dirname, "../../sessions/testdata/reasonix-2.29.0/session.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+const models = [...new Set(fixture.filter(m => m.role === "assistant").map(m => m.modelRef.replace(/^magpie\//, "")))];
+const reasonix = { agent:"reasonix", id:"session-a", title:"2.29.0 without ledger", cwd:"/work/app", last:new Date().toISOString(), input:0, output:0, cache_read:0, cache_write:0, cost:0, priced:true, usage_incomplete:true, models };
 const iso = (d) => [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
 const today = iso(new Date());
 const days = [{
   date: today,
-  usage: names.map((_, i) => ({ agent: "a" + i, cwd: "/work/app", model: "m" + (i % 3), input: 1000 * (i + 1), output: 100, cache_read: 0, cache_write: 0, cost: 0.1, priced: true })),
+  usage: names.map((_, i) => ({ agent: agentID(i), cwd: "/work/app", model: "m" + (i % 3), input: 1000 * (i + 1), output: 100, cache_read: 0, cache_write: 0, cost: 0.1, priced: true })),
   active: [],
 }];
 
@@ -28,8 +32,8 @@ function serve(lang) {
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: { lang, theme: "light" } });
     if (url.pathname === "/api/sessions/progress") return json({ indexing: false });
-    if (url.pathname === "/api/sessions") return json({ sessions: [], dirs: [] });
-    if (url.pathname === "/api/sessions/stats") return json({ from: today, to: today, days, agents });
+    if (url.pathname === "/api/sessions") return json({ sessions: names.map((name, i) => ({...reasonix, agent:agentID(i), name, title:i === names.length-1 ? reasonix.title : name, usage_incomplete:i === names.length-1, models:i === names.length-1 ? models.map(model => ({model, input:0, output:0, cache_read:0, cache_write:0, priced:true})) : []})), dirs: [] });
+    if (url.pathname === "/api/sessions/stats") return json({ from: today, to: today, days, agents, sessions:[reasonix] });
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/usage/quotas") return json([]);
     if (url.pathname.startsWith("/api/")) return json({});
@@ -90,6 +94,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const seen = Math.min(on.x + on.width, sb.x + sb.width) - Math.max(on.x, sb.x);
       assert(seen >= on.width * 0.75, `the picked agent stays in view after the strip is drawn again: ${JSON.stringify({ on, sb })}`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+      const row = page.locator(".sess-link", { hasText:"2.29.0 without ledger" });
+      await row.waitFor();
+      const text = (await row.textContent()).toLowerCase();
+      assert(text.includes("flash") && text.includes("pro"), "Usage Models shows 2.29.0 modelRef identities without a ledger");
+      assert.equal(await row.locator(".num b").textContent(), "—", "2.x has unknown session tokens");
+      assert((await row.textContent()).includes({en:"Partial usage history",zh:"用量历史不完整",ja:"使用履歴が不完全です",de:"Unvollständiger Nutzungsverlauf"}[lang]));
       assert.deepEqual(errors, []);
     });
   }

@@ -201,7 +201,8 @@ func statsAt(days int, now time.Time) Stats {
 				sh.perDate[date] = pd
 			}
 			for model, t := range d.Models {
-				if !t.zero() {
+				// Reasonix 2.x records model presence without session token counts.
+				if !t.zero() || f.agent == "reasonix" {
 					u := sh.models[model]
 					u.add(t)
 					sh.models[model] = u

@@ -211,3 +211,106 @@ func BenchmarkReasonixLedgerAppend(b *testing.B) {
 		b.Fatal("append usage lost or duplicated")
 	}
 }
+
+// 2.29.0 persists modelRef in assistant messages, but no per-session ledger.
+// Shape checked against esengine/DeepSeek-Reasonix@9d4a2bd.
+func TestReasonix229ModelsWithoutLedger(t *testing.T) {
+	p, l := reasonixFixture(t)
+	if err := os.Remove(l); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"session.jsonl", "session.jsonl.meta"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "reasonix-2.29.0", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := p
+		if strings.HasSuffix(name, ".meta") {
+			target += ".meta"
+		}
+		if err := os.WriteFile(target, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := reasonixOnly(t)
+	if !s.UsageIncomplete || !s.Tokens.zero() || s.Unpriced != 0 || len(s.Models) != 2 {
+		t.Fatalf("2.29.0 models without fabricated usage: %+v", s)
+	}
+	for _, m := range s.Models {
+		if !m.Tokens.zero() {
+			t.Fatalf("invented usage: %+v", m)
+		}
+	}
+	check := func() {
+		t.Helper()
+		for _, sum := range StatsFor(0).Sessions {
+			if sum.Agent == "reasonix" {
+				if !sum.UsageIncomplete || !sum.Tokens.zero() || len(sum.Models) != 2 || sum.Prompts != 1 || sum.Replies != 2 {
+					t.Fatalf("2.29.0 page summary: %+v", sum)
+				}
+				return
+			}
+		}
+		t.Fatal("2.29.0 missing from Usage Sessions")
+	}
+	check()
+	Reset()
+	check()
+	if err := os.Remove(p + ".meta"); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.Title != "hello" {
+		t.Fatalf("host-authored title: %q", s.Title)
+	}
+}
+
+func TestReasonixDirsWithoutTranscripts(t *testing.T) {
+	setup(t)
+	root := t.TempDir()
+	t.Setenv("REASONIX_STATE_HOME", root)
+	for _, rel := range []string{"sessions", "projects/project/sessions"} {
+		dir := filepath.Join(root, rel)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, d := range Dirs() {
+			if d == root {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("existing empty %s must be listed without reading transcripts", rel)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestReasonixOldSummaryRebuildsModels(t *testing.T) {
+	p, l := reasonixFixture(t)
+	if err := os.Remove(l); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(`{"role":"assistant","content":"reply","modelRef":"magpie/deepseek/deepseek-flash","createdAt":1791244801000}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reasonixOnly(t) // initialize the shared summary cache
+	files := reasonixFiles()
+	f := files[0]
+	old := parse(f, nil)
+	// An unchanged transcript already scanned by the previous adapter.
+	old.Models = nil
+	for _, d := range old.Days {
+		d.Models = nil
+	}
+	old.DBRevision = strings.TrimPrefix(old.DBRevision, reasonixRevision)
+	mu.Lock()
+	cache[p] = old
+	mu.Unlock()
+	if s := reasonixOnly(t); len(s.Models) != 1 {
+		t.Fatalf("old cached summary still hides models: %+v", s)
+	}
+}

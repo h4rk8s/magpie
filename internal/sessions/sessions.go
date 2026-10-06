@@ -426,7 +426,7 @@ func allFiles() []file {
 // Codex's, and the other agents' where they keep sessions on this computer.
 func Dirs() []string {
 	out := []string{ClaudeDir(), CodexDir()}
-	if len(reasonixFiles()) != 0 {
+	if len(reasonixSessionDirs()) != 0 {
 		out = append(out, ReasonixDir())
 	}
 	for _, d := range []struct{ dir, sessions string }{
@@ -968,7 +968,7 @@ func assemble(fs []file, price func(string) *catalog.Price) (Session, bool) {
 			// which call went over a long-context tier isn't known here
 			m.Cost, m.Priced = p.At(0).CostSplit(m.Input, m.Output, m.CacheRead, m.CacheWrite, m.CacheWrite1h), true
 			s.Cost += m.Cost
-		} else {
+		} else if !m.Tokens.zero() {
 			s.Unpriced++
 		}
 		s.Tokens.add(m.Tokens)
@@ -1038,7 +1038,7 @@ func parserFor(agent string) sessionParser {
 
 // parse reads a file on from where old left it, or from the start.
 func parse(f file, old *state) *state {
-	if f.agent == "reasonix" && old != nil && old.ID != f.sid {
+	if f.agent == "reasonix" && old != nil && (old.ID != f.sid || f.main && !strings.HasPrefix(old.DBRevision, reasonixRevision)) {
 		old = nil
 	}
 	// Summary caches contain aggregates only. After a restart, a changed
