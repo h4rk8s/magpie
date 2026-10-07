@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,7 @@ type reasonixMeta struct {
 	ID      string    `json:"id"`
 	Title   string    `json:"topic_title"`
 	Custom  string    `json:"custom_title"`
+	Preview string    `json:"preview"`
 	Cwd     string    `json:"workspace_root"`
 	Created time.Time `json:"created_at"`
 	Updated time.Time `json:"updated_at"`
@@ -58,7 +60,7 @@ func reasonixSessionDirs() []string {
 	return out
 }
 
-const reasonixRevision = "reasonix-models-v2:"
+const reasonixRevision = "reasonix-native-v3:"
 
 // Legacy transcripts are JSONL messages; their .jsonl.meta sidecar supplies
 // identity, title and workspace. Usage lives in a separate .turns.jsonl ledger.
@@ -110,8 +112,26 @@ func reasonixFiles() []file {
 				f.rev += ":ledger"
 				pair = []file{f, ledger}
 			} else {
-				f.rev += ":no-ledger"
-				pair = []file{f}
+				wire := file{agent: "reasonix", path: filepath.Join(dir, stem+".wire.jsonl"), key: key, sid: m.ID, manifest: p}
+				if stat(&wire) {
+					f.rev += ":wire"
+					// Wire sequences restart on resume. Rebuild this bounded log when it
+					// or its transcript/totals changes; never persist a global seq watermark.
+					wire.rev = f.rev + ":" + strconv.FormatInt(f.size, 10) + ":" + strconv.FormatInt(f.mod.UnixNano(), 10) + ":" + prefixHash(p, f.size)
+					for _, sidecar := range []string{p + ".telemetry.json", filepath.Join(dir, stem+".wire.meta.json")} {
+						bytes, err := os.ReadFile(sidecar)
+						if err != nil {
+							wire.rev += ":" + err.Error()
+							continue
+						}
+						digest := sha256.Sum256(bytes)
+						wire.rev += ":" + hex.EncodeToString(digest[:])
+					}
+					pair = []file{f, wire}
+				} else {
+					f.rev += ":no-ledger"
+					pair = []file{f}
+				}
 			}
 			// A copied session retains its id. Read one copy, not two totals.
 			old := chosen[m.ID]
@@ -141,14 +161,15 @@ func reasonixSidecar(stem string) bool {
 }
 
 type reasonixMessage struct {
-	Role         string `json:"role"`
-	ModelRef     string `json:"modelRef"`
-	HostAuthored bool   `json:"host_authored"`
-	Content      string `json:"content"`
-	Thinking     string `json:"reasoning_content"`
-	Name         string `json:"name"`
-	At           int64  `json:"createdAt"`
-	Local        bool   `json:"local_only"`
+	Role         string  `json:"role"`
+	ModelRef     string  `json:"modelRef"`
+	HostAuthored bool    `json:"host_authored"`
+	Content      string  `json:"content"`
+	RawContent   *string `json:"raw_content"`
+	Thinking     string  `json:"reasoning_content"`
+	Name         string  `json:"name"`
+	At           int64   `json:"createdAt"`
+	Local        bool    `json:"local_only"`
 	Tools        []struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -220,7 +241,7 @@ func reasonixLine(s *state, b []byte, main bool) {
 		return
 	}
 	if m.Role == "user" && s.Title == "" {
-		s.Title = title(m.Content)
+		s.Title = title(m.userText())
 	}
 	// A model identity is useful even when this release stores no session
 	// token counts. Keep presence separate from usage; never infer tokens.
@@ -232,6 +253,15 @@ func reasonixLine(s *state, b []byte, main bool) {
 		if _, ok := s.Models[model]; !ok {
 			s.Models[model] = Tokens{}
 		}
+	}
+	if m.Role == "user" {
+		s.ReasonixAt = m.At
+		if cwd := reasonixWorkspace(m.Content); m.RawContent != nil && cwd != "" {
+			s.ReasonixCwd = cwd
+		}
+	}
+	if m.At <= 0 && m.Role == "assistant" {
+		m.At = s.ReasonixAt
 	}
 	if m.At <= 0 {
 		return
@@ -266,7 +296,7 @@ func reasonixMetadata(s *state, f file) {
 	s.DBRevision = f.rev
 	s.UsageIncomplete = f.manifest == "" || strings.HasSuffix(f.rev, ":no-ledger")
 	if f.manifest == "" {
-		s.Cwd, s.Named, s.Custom = "", "", ""
+		s.Cwd, s.Named, s.Custom = s.ReasonixCwd, "", ""
 		return
 	}
 	var m reasonixMeta
@@ -275,10 +305,16 @@ func reasonixMetadata(s *state, f file) {
 		return
 	}
 	s.Cwd, s.Named, s.Custom, s.DBRevision = m.Cwd, m.Title, m.Custom, f.rev
+	if s.Cwd == "" {
+		s.Cwd = s.ReasonixCwd
+	}
+	if s.Title == "" {
+		s.Title = title(m.Preview)
+	}
 	if !m.Created.IsZero() && (s.Start.IsZero() || m.Created.Before(s.Start)) {
 		s.Start = m.Created
 	}
-	if s.Last.IsZero() {
+	if m.Updated.After(s.Last) {
 		s.Last = m.Updated
 	}
 }
@@ -299,7 +335,7 @@ func reasonixTranscript(path string, add func(bool, Part) bool) error {
 		if m.Role == "tool" {
 			kind = "tool_result"
 		}
-		if !add(m.Role == "user", Part{Role: m.Role, Kind: kind, Name: m.Name, Text: m.Content}) {
+		if !add(m.Role == "user", Part{Role: m.Role, Kind: kind, Name: m.Name, Text: m.userText()}) {
 			return false
 		}
 		for _, tool := range m.Tools {
@@ -310,4 +346,191 @@ func reasonixTranscript(path string, add func(bool, Part) bool) error {
 		return true
 	})
 	return err
+}
+
+// raw_content is the human input before the host wraps workspace, skills and
+// execution policy around it. Presence (including empty) wins over content.
+func (m reasonixMessage) userText() string {
+	if m.Role == "user" && m.RawContent != nil {
+		return *m.RawContent
+	}
+	return m.Content
+}
+
+var reasonixWorkspaceLine = regexp.MustCompile(`(?m)^Current workspace: ("(?:[^"\\]|\\.)*")\.`)
+
+func reasonixWorkspace(content string) string {
+	if !strings.HasPrefix(content, "<workspace>\n") {
+		return ""
+	}
+	match := reasonixWorkspaceLine.FindStringSubmatch(content)
+	var cwd string
+	if len(match) == 2 {
+		_ = json.Unmarshal([]byte(match[1]), &cwd)
+	}
+	return cwd
+}
+
+// parseReasonixWire reads request frames, not messages. The log is capped at
+// 8 MB by Reasonix; unchanged files reuse their cached summary. Models come
+// from the usage quote, or the executor turn that owns the request. Dates come
+// from that turn's actual user-message index, not the file mtime.
+func parseReasonixWire(f file) *state {
+	s := &state{ID: f.sid, Size: f.size, Mod: f.mod.UnixNano(), DBRevision: f.rev}
+	// Find the last referenced user index before reading timestamp anchors.
+	// Large transcript tails (tool output/streaming text) are irrelevant to
+	// these frames and are not reread on each wire update.
+	maxIndex := -1
+	_, err := scanAt(f.path, 0, func(b []byte) bool { return bytes.Contains(b, []byte(`"turn_started"`)) }, func(b []byte, _, _ int64) bool {
+		var frame struct {
+			Kind  string `json:"kind"`
+			Index int    `json:"msgIndex"`
+		}
+		if json.Unmarshal(b, &frame) != nil {
+			s.UsageIncomplete = true
+			return true
+		}
+		if frame.Kind == "turn_started" && frame.Index > maxIndex {
+			maxIndex = frame.Index
+		}
+		return true
+	})
+	if err != nil || maxIndex < 0 {
+		s.UsageIncomplete = true
+	}
+	var times []int64
+	if maxIndex >= 0 {
+		_, err = scanAt(f.manifest, 0, nil, func(b []byte, _, _ int64) bool {
+			var m struct {
+				Role string `json:"role"`
+				At   int64  `json:"createdAt"`
+			}
+			if json.Unmarshal(b, &m) != nil {
+				s.UsageIncomplete = true
+			}
+			if m.Role != "user" {
+				m.At = 0
+			}
+			times = append(times, m.At)
+			return len(times) <= maxIndex
+		})
+		if err != nil {
+			s.UsageIncomplete = true
+		}
+	}
+	model := ""
+	var at int64
+	count := 0
+	var total, epoch Tokens
+	epochCount := 0
+	var seq uint64
+	firstTurn := true
+	off, scanErr := scanAt(f.path, 0, nil, func(b []byte, _, _ int64) bool {
+		var frame struct {
+			Kind         string `json:"kind"`
+			Seq          uint64 `json:"seq"`
+			AuthoredTurn int    `json:"authoredTurn"`
+			Model        string `json:"modelRef"`
+			Index        int    `json:"msgIndex"`
+			Usage        *struct {
+				Prompt    int    `json:"promptTokens"`
+				Output    int    `json:"completionTokens"`
+				Hit       int    `json:"cacheHitTokens"`
+				Source    string `json:"source"`
+				Estimated bool   `json:"estimated"`
+				Quote     struct {
+					Model string `json:"modelRef"`
+				} `json:"costQuote"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(b, &frame) != nil {
+			s.UsageIncomplete = true
+			return true
+		}
+		if frame.Seq > 0 {
+			if seq > 0 && frame.Seq <= seq {
+				epoch, epochCount = Tokens{}, 0
+			}
+			seq = frame.Seq
+		}
+		if frame.Kind == "turn_started" {
+			if firstTurn && frame.AuthoredTurn > 1 {
+				s.UsageIncomplete = true
+			}
+			firstTurn = false
+			model, at = frame.Model, 0
+			if frame.Index >= 0 && frame.Index < len(times) {
+				at = times[frame.Index]
+			}
+			return true
+		}
+		if frame.Kind != "usage" {
+			return true
+		}
+		u := frame.Usage
+		if u == nil {
+			s.UsageIncomplete = true
+			return true
+		}
+		ref := u.Quote.Model
+		if ref == "" && (u.Source == "" || u.Source == "executor") {
+			ref = model
+		}
+		if ref == "" || at <= 0 || u.Estimated || u.Prompt < 0 || u.Output < 0 || u.Hit < 0 || u.Hit > u.Prompt {
+			s.UsageIncomplete = true
+			return true
+		}
+		tokens := Tokens{Input: u.Prompt - u.Hit, Output: u.Output, CacheRead: u.Hit}
+		count++
+		epochCount++
+		epoch.add(tokens)
+		total.add(tokens)
+		stamp := time.UnixMilli(at)
+		s.saw(stamp, false)
+		s.use(dateOf(stamp), strings.TrimPrefix(ref, "magpie/"), tokens)
+		return true
+	})
+	if scanErr != nil || off < f.size {
+		s.UsageIncomplete = true
+	}
+	meta := strings.TrimSuffix(f.path, ".jsonl") + ".meta.json"
+	if b, err := os.ReadFile(meta); err == nil {
+		var m struct {
+			Truncated bool `json:"truncated"`
+		}
+		if json.Unmarshal(b, &m) != nil || m.Truncated {
+			s.UsageIncomplete = true
+		}
+	} else if !os.IsNotExist(err) {
+		s.UsageIncomplete = true
+	}
+	if count == 0 {
+		s.UsageIncomplete = true
+	}
+	// Telemetry is a check on retained-frame coverage, not another token source.
+	// It has no model/date breakdown, so adding it would count requests twice.
+	if b, err := os.ReadFile(f.manifest + ".telemetry.json"); err == nil {
+		var report struct {
+			Version int `json:"version"`
+			Usage   struct {
+				Prompt    int  `json:"promptTokens"`
+				Output    int  `json:"completionTokens"`
+				Hit       int  `json:"cacheHitTokens"`
+				Count     int  `json:"requestCount"`
+				Estimated bool `json:"estimated"`
+			} `json:"usage"`
+		}
+		valid := json.Unmarshal(b, &report) == nil && report.Version == 1 && !report.Usage.Estimated
+		matches := func(t Tokens, n int) bool {
+			return report.Usage.Prompt == t.Input+t.CacheRead && report.Usage.Output == t.Output && report.Usage.Hit == t.CacheRead && report.Usage.Count == n
+		}
+		// 2.29.0 resets its telemetry accumulator on a fresh serve --resume;
+		// the wire log retains prior processes. Compare against either shape.
+		if !valid || !matches(total, count) && !matches(epoch, epochCount) {
+			s.UsageIncomplete = true
+		}
+	} else if !os.IsNotExist(err) {
+		s.UsageIncomplete = true
+	}
+	return s
 }

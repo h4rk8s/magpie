@@ -14,7 +14,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const fixture = require("node:fs").readFileSync(path.resolve(__dirname, "../../sessions/testdata/reasonix-2.29.0/session.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
-const reasonixModels = [...new Set(fixture.filter(m => m.role === "assistant").map(m => m.modelRef.replace(/^magpie\//, "")))].map(model => ({model, input:0, output:0, cache_read:0, cache_write:0, cost:0, priced:true}));
+const nativeUsage = JSON.parse(require("node:fs").readFileSync(path.resolve(__dirname, "../../sessions/testdata/reasonix-2.29.0/session.jsonl.telemetry.json"), "utf8")).usage;
+const nativeTokens = {input:nativeUsage.promptTokens-nativeUsage.cacheHitTokens, output:nativeUsage.completionTokens, cache_read:nativeUsage.cacheHitTokens, cache_write:0};
+const reasonixModels = [...new Set(fixture.filter(m => m.role === "assistant").map(m => m.modelRef.replace(/^magpie\//, "")))].map(model => ({model, ...nativeTokens, cost:0, priced:false}));
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
@@ -41,7 +43,7 @@ function serve(lang, calls) {
       sess("pi", "p-2", "an older one", 50, { transcript: true, carry: [{ agent: "omp", command: FORK.replace("p-1", "p-2") }] }),
     ],
     opencode: [{ ...sess("opencode", "o-1", "an opencode chat", 8), deletable: false, resume: "opencode -s o-1" }],
-    reasonix: [{ ...sess("reasonix", "r-1", "a Reasonix chat", 8), deletable: false, transcript: true, usage_incomplete: true, models: reasonixModels, input:0, output:0, cache_read:0, cache_write:0, resume: "reasonix --resume '/work/session.jsonl'" }],
+    reasonix: [{ ...sess("reasonix", "r-1", "hello there", 8), deletable: false, transcript: true, usage_incomplete: false, models: reasonixModels, ...nativeTokens, resume: "reasonix --resume '/work/session.jsonl'" }],
   };
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
   return async (route) => {
@@ -67,7 +69,7 @@ function serve(lang, calls) {
     }
     if (url.pathname === "/api/sessions/transcript") {
       calls.push({ path: "transcript", agent: url.searchParams.get("agent"), id: url.searchParams.get("id") });
-      return json({ parts: PARTS });
+      return json({ parts: url.searchParams.get("agent") === "reasonix" ? fixture.filter(m => m.role !== "system").map(m => ({role:m.role,kind:"text",text:m.raw_content ?? m.content})) : PARTS });
     }
     if (url.pathname === "/api/sessions/terminal") {
       calls.push({ path: "terminal", body: route.request().postDataJSON() });
@@ -201,14 +203,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const rx = view.locator('.row.sm-sess[data-id="r-1"]');
       await rx.waitFor();
       const partial = w.partial || (lang === "zh" ? "用量历史不完整" : "Partial usage history");
-      assert((await rx.textContent()).includes(partial), "missing usage is visible, not presented as a complete zero");
-      assert((await rx.textContent()).toLowerCase().includes("flash") && (await rx.textContent()).toLowerCase().includes("pro"), "2.29.0 modelRef models appear with no usage ledger");
-      assert.equal(await rx.locator(".num b").textContent(), "—", "missing tokens stay unknown");
+      assert(!(await rx.textContent()).includes(partial), "complete native wire usage is not labelled incomplete");
+      assert((await rx.textContent()).includes("fake-model"), "native 2.29.0 model appears");
+      assert.notEqual(await rx.locator(".num b").textContent(), "—", "wire usage appears without double-counting telemetry");
       await rx.locator(".who").click();
       assert((await view.locator(".sess-detail").textContent()).includes("reasonix --resume"));
       await view.locator(".sess-talk-btn").click();
       await view.locator(".sess-talk .cx-part").first().waitFor();
       assert(calls.some((c) => c.path === "transcript" && c.agent === "reasonix" && c.id === "r-1"));
+      const nativeTalk = await view.locator(".sess-talk").textContent();
+      assert(nativeTalk.includes("hello there") && nativeTalk.includes("follow up") && !nativeTalk.includes("<workspace>"), "native raw user input is shown");
 
       if (lang === "zh") {
         const missing = await page.evaluate(() => ["Continue in {agent}", "Continue in", "Continue this session in another agent", "Continue in another agent",

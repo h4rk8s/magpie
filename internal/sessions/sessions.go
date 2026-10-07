@@ -161,6 +161,8 @@ type state struct {
 	// Codex: the model_provider its session_meta names (codex_provider.go)
 	Provider string `json:"provider,omitempty"`
 	// Reasonix's native turn ledger uses a sequence across all turns.
+	ReasonixAt      int64  `json:"reasonix_at,omitempty"`
+	ReasonixCwd     string `json:"reasonix_cwd,omitempty"`
 	ReasonixSeq     uint64 `json:"reasonix_seq,omitempty"`
 	UsageIncomplete bool   `json:"usage_incomplete,omitempty"`
 	// Pi: in a forked session, the time it was forked; the lines before
@@ -1038,6 +1040,9 @@ func parserFor(agent string) sessionParser {
 
 // parse reads a file on from where old left it, or from the start.
 func parse(f file, old *state) *state {
+	if f.agent == "reasonix" && strings.HasSuffix(f.path, ".wire.jsonl") {
+		return parseReasonixWire(f)
+	}
 	if f.agent == "reasonix" && old != nil && (old.ID != f.sid || f.main && !strings.HasPrefix(old.DBRevision, reasonixRevision)) {
 		old = nil
 	}

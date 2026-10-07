@@ -30,7 +30,7 @@ func reasonixFixture(t *testing.T) (string, string) {
 	write(l, reasonixUsageFixture(1, "executor", "magpie/deepseek/deepseek-flash"))
 	// Global usage cannot be assigned to this session. Even a valid metadata
 	// sidecar does not make a wire/events ledger into a second conversation.
-	write(strings.TrimSuffix(p, ".jsonl")+".wire.jsonl", `{"role":"user","content":"not a transcript"}`+"\n")
+	write(strings.TrimSuffix(p, ".jsonl")+".wire.jsonl", `{"kind":"turn_started","text":"not a transcript","modelRef":"fake/fake-model","msgIndex":0,"seq":1}`+"\n")
 	write(strings.TrimSuffix(p, ".jsonl")+".wire.jsonl.meta", `{"id":"wire"}`)
 	return p, l
 }
@@ -212,56 +212,142 @@ func BenchmarkReasonixLedgerAppend(b *testing.B) {
 	}
 }
 
-// 2.29.0 persists modelRef in assistant messages, but no per-session ledger.
-// Shape checked against esengine/DeepSeek-Reasonix@9d4a2bd.
-func TestReasonix229ModelsWithoutLedger(t *testing.T) {
+// Fixtures captured from the published 2.29.0 serve host, not synthesized
+// from Message's optional fields. See the fixture's provenance README.
+func reasonix229Fixture(t *testing.T) (string, string) {
+	t.Helper()
 	p, l := reasonixFixture(t)
 	if err := os.Remove(l); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"session.jsonl", "session.jsonl.meta"} {
+	wire := strings.TrimSuffix(p, ".jsonl") + ".wire.jsonl"
+	for name, target := range map[string]string{"session.jsonl": p, "session.jsonl.meta": p + ".meta", "session.jsonl.telemetry.json": p + ".telemetry.json", "session.wire.jsonl": wire} {
 		b, err := os.ReadFile(filepath.Join("testdata", "reasonix-2.29.0", name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		target := p
-		if strings.HasSuffix(name, ".meta") {
-			target += ".meta"
-		}
-		if err := os.WriteFile(target, b, 0600); err != nil {
+		if err = os.WriteFile(target, b, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return p, wire
+}
 
-	s := reasonixOnly(t)
-	if !s.UsageIncomplete || !s.Tokens.zero() || s.Unpriced != 0 || len(s.Models) != 2 {
-		t.Fatalf("2.29.0 models without fabricated usage: %+v", s)
-	}
-	for _, m := range s.Models {
-		if !m.Tokens.zero() {
-			t.Fatalf("invented usage: %+v", m)
-		}
-	}
+func TestReasonix229NativeUsageAndMessages(t *testing.T) {
+	reasonix229Fixture(t)
 	check := func() {
 		t.Helper()
+		s := reasonixOnly(t)
+		if s.Title != "hello there" || s.Cwd != "/work/reasonix-229" || s.UsageIncomplete || s.Input != 468 || s.Output != 112 || s.CacheRead != 2000 || len(s.Models) != 1 || s.Models[0].Model != "fake/fake-model" {
+			t.Fatalf("native 2.29.0 session: %+v", s)
+		}
+		tr, err := TranscriptOf(s)
+		if err != nil || len(tr.Parts) != 4 || tr.Parts[0].Text != "hello there" || tr.Parts[2].Text != "follow up" {
+			t.Fatalf("native user text: %+v %v", tr, err)
+		}
+		found := false
 		for _, sum := range StatsFor(0).Sessions {
 			if sum.Agent == "reasonix" {
-				if !sum.UsageIncomplete || !sum.Tokens.zero() || len(sum.Models) != 2 || sum.Prompts != 1 || sum.Replies != 2 {
-					t.Fatalf("2.29.0 page summary: %+v", sum)
+				found = true
+				if sum.Prompts != 2 || sum.Replies != 2 || len(sum.Models) != 1 || sum.Models[0] != "fake/fake-model" || sum.Input != 468 || sum.Output != 112 || sum.CacheRead != 2000 || sum.UsageIncomplete {
+					t.Fatalf("native Usage Sessions: %+v", sum)
 				}
-				return
 			}
 		}
-		t.Fatal("2.29.0 missing from Usage Sessions")
+		if !found {
+			t.Fatal("native 2.x Usage Sessions absent")
+		}
 	}
 	check()
 	Reset()
 	check()
-	if err := os.Remove(p + ".meta"); err != nil {
+}
+
+func TestReasonix229WireCoverageAndResume(t *testing.T) {
+	p, wire := reasonix229Fixture(t)
+	reasonixOnly(t)
+	original, err := os.ReadFile(wire)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if s := reasonixOnly(t); s.Title != "hello" {
-		t.Fatalf("host-authored title: %q", s.Title)
+	// Sequences restart after resume. Repeated seq/attempt IDs do not mean
+	// duplicate billing; the append belongs to a new host process.
+	f, err := os.OpenFile(wire, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(original); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	telemetry := `{"version":1,"usage":{"promptTokens":4936,"completionTokens":224,"cacheHitTokens":4000,"requestCount":4}}`
+	if err = os.WriteFile(p+".telemetry.json", []byte(telemetry), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.Input != 936 || s.Output != 224 || s.CacheRead != 4000 || s.UsageIncomplete {
+		t.Fatalf("resumed wire sequences: %+v", s)
+	}
+	// A retained prefix has only one request; global/session totals are not
+	// assigned to a model or added to the retained usage a second time.
+	lines := strings.Split(string(original), "\n")
+	prefix := ""
+	for _, line := range lines {
+		prefix += line + "\n"
+		var frame struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal([]byte(line), &frame)
+		if frame.Kind == "usage" {
+			break
+		}
+	}
+	if err = os.WriteFile(wire, []byte(prefix), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.Input != 234 || s.Output != 56 || !s.UsageIncomplete {
+		t.Fatalf("telemetry detects missing frames: %+v", s)
+	}
+	if err = os.Remove(p + ".telemetry.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(strings.TrimSuffix(wire, ".jsonl")+".meta.json", []byte(`{"truncated":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); !s.UsageIncomplete || s.Input != 234 {
+		t.Fatalf("wire truncation marker: %+v", s)
+	}
+}
+
+func TestReasonix229MessagesWithoutUsage(t *testing.T) {
+	p, wire := reasonix229Fixture(t)
+	if err := os.Remove(wire); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p + ".telemetry.json"); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); !s.UsageIncomplete || s.Input != 0 || len(s.Models) != 1 || s.Title != "hello there" {
+		t.Fatalf("missing usage: %+v", s)
+	}
+	// Host-authored user messages must not change the native prompt/title.
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = append([]byte(`{"role":"user","content":"host instruction","host_authored":true,"createdAt":1791340530000}`+"\n"), b...)
+	if err = os.WriteFile(p, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(p + ".meta"); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.Title != "hello there" {
+		t.Fatalf("host-authored fallback: %+v", s)
+	}
+	for _, sum := range StatsFor(0).Sessions {
+		if sum.Agent == "reasonix" && (sum.Prompts != 2 || sum.Replies != 2 || len(sum.Models) != 1) {
+			t.Fatalf("timestamp-free assistant attribution: %+v", sum)
+		}
 	}
 }
 
@@ -312,5 +398,154 @@ func TestReasonixOldSummaryRebuildsModels(t *testing.T) {
 	mu.Unlock()
 	if s := reasonixOnly(t); len(s.Models) != 1 {
 		t.Fatalf("old cached summary still hides models: %+v", s)
+	}
+}
+
+func TestReasonix229RealResumeTelemetryEpoch(t *testing.T) {
+	p, wire := reasonix229Fixture(t)
+	for name, target := range map[string]string{"resumed.jsonl": p, "resumed.jsonl.meta": p + ".meta", "resumed.jsonl.telemetry.json": p + ".telemetry.json", "resumed.wire.jsonl": wire} {
+		b, err := os.ReadFile(filepath.Join("testdata", "reasonix-2.29.0", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(target, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := reasonixOnly(t); s.Input != 702 || s.Output != 168 || s.CacheRead != 3000 || s.UsageIncomplete {
+		t.Fatalf("real resume telemetry epoch: %+v", s)
+	}
+	for _, sum := range StatsFor(0).Sessions {
+		if sum.Agent == "reasonix" && (sum.Prompts != 3 || sum.Replies != 3 || sum.UsageIncomplete) {
+			t.Fatalf("real resumed activity: %+v", sum)
+		}
+	}
+}
+
+// Faults are applied to producer-captured frames. They must affect both the
+// retained accounting and completeness; a green parser alone is not enough.
+func TestReasonix229WireFaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, old, new     string
+		input, output, hit int
+		partial            bool
+	}{
+		{"estimated-usage", `"attemptId":"sa-1-1"`, `"attemptId":"sa-1-1","estimated":true`, 234, 56, 1000, true},
+		{"invalid-cache", `"cacheHitTokens":1000,"cacheMissTokens":234`, `"cacheHitTokens":2000,"cacheMissTokens":234`, 0, 0, 0, true},
+		{"executor-model-fallback", `"modelRef":"fake/fake-model","usageSource"`, `"modelRef":"","usageSource"`, 468, 112, 2000, false},
+		{"auxiliary-missing-model", `"source":"executor"`, `"source":"planner"`, 468, 112, 2000, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, wire := reasonix229Fixture(t)
+			b, err := os.ReadFile(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := strings.ReplaceAll(string(b), tc.old, tc.new)
+			if n == string(b) {
+				t.Fatal("mutation did not match captured bytes")
+			}
+			if err = os.WriteFile(wire, []byte(n), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s := reasonixOnly(t)
+			if s.Input != tc.input || s.Output != tc.output || s.CacheRead != tc.hit || s.UsageIncomplete != tc.partial {
+				t.Fatalf("fault accounting: %+v", s)
+			}
+		})
+	}
+}
+
+func TestReasonix229SidecarRefreshAndTail(t *testing.T) {
+	p, wire := reasonix229Fixture(t)
+	reasonixOnly(t) // warm cache
+	marker := strings.TrimSuffix(wire, ".jsonl") + ".meta.json"
+	if err := os.WriteFile(marker, []byte(`{"truncated":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); !s.UsageIncomplete || s.Input != 468 {
+		t.Fatalf("marker-only update stale: %+v", s)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.UsageIncomplete {
+		t.Fatalf("marker removal stale: %+v", s)
+	}
+	if err := os.WriteFile(p+".telemetry.json", []byte(`{"version":99,"usage":{}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); !s.UsageIncomplete || s.Input != 468 {
+		t.Fatalf("unsupported telemetry version: %+v", s)
+	}
+	if err := os.Remove(p + ".telemetry.json"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail := `{"kind":"usage","usage":{"promptTokens":10,"completionTokens":2,"cacheHitTokens":0,"source":"executor"},"seq":15}`
+	if err = os.WriteFile(wire, append(b, []byte(tail)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); !s.UsageIncomplete || s.Input != 468 {
+		t.Fatalf("partial line counted: %+v", s)
+	}
+	if err = os.WriteFile(wire, append(append(b, []byte(tail)...), '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if s := reasonixOnly(t); s.UsageIncomplete || s.Input != 478 || s.Output != 114 {
+		t.Fatalf("completed tail stale: %+v", s)
+	}
+}
+
+func TestReasonixRawContentPresence(t *testing.T) {
+	for _, tc := range []struct{ name, line, text, cwd string }{
+		{"empty", `{"role":"user","raw_content":"","content":"injected text"}`, "", ""},
+		{"legacy-literal-workspace", `{"role":"user","content":"<workspace>\nCurrent workspace: \"/literal\".\nhello"}`, "<workspace>\nCurrent workspace: \"/literal\".\nhello", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, l := reasonixFixture(t)
+			_ = os.Remove(l)
+			_ = os.Remove(p + ".meta")
+			if err := os.WriteFile(p, []byte(tc.line+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s := &state{}
+			reasonixLine(s, []byte(tc.line), true)
+			var parts []Part
+			err := reasonixTranscript(p, func(_ bool, part Part) bool { parts = append(parts, part); return true })
+			if err != nil || len(parts) != 1 || parts[0].Text != tc.text || s.ReasonixCwd != tc.cwd {
+				t.Fatalf("presence semantics: %+v %+v %v", s, parts, err)
+			}
+		})
+	}
+}
+
+func BenchmarkReasonix229WireLargeTranscriptTail(b *testing.B) {
+	dir := b.TempDir()
+	p := filepath.Join(dir, "session.jsonl")
+	wire := filepath.Join(dir, "session.wire.jsonl")
+	for name, target := range map[string]string{"session.jsonl": p, "session.wire.jsonl": wire, "session.jsonl.telemetry.json": p + ".telemetry.json"} {
+		data, err := os.ReadFile(filepath.Join("testdata", "reasonix-2.29.0", name))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if name == "session.jsonl" {
+			data = append(data, []byte(strings.Repeat(`{"role":"tool","content":"`+strings.Repeat("x", 8192)+`"}`+"\n", 2048))...)
+		}
+		if err = os.WriteFile(target, data, 0600); err != nil {
+			b.Fatal(err)
+		}
+	}
+	f := file{agent: "reasonix", path: wire, manifest: p, sid: "session-a"}
+	stat(&f)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s := parseReasonixWire(f)
+		if s.Models["fake/fake-model"].Input != 468 || s.UsageIncomplete {
+			b.Fatal("wire summary changed")
+		}
 	}
 }
