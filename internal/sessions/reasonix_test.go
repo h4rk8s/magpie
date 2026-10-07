@@ -430,10 +430,12 @@ func TestReasonix229WireFaults(t *testing.T) {
 		input, output, hit int
 		partial            bool
 	}{
+		{"missing-user-index", `"msgIndex":1`, `"msgIndex":999`, 234, 56, 1000, true},
+		{"missing-model", `"modelRef":"fake/fake-model"`, `"modelRef":""`, 0, 0, 0, true},
 		{"estimated-usage", `"attemptId":"sa-1-1"`, `"attemptId":"sa-1-1","estimated":true`, 234, 56, 1000, true},
 		{"invalid-cache", `"cacheHitTokens":1000,"cacheMissTokens":234`, `"cacheHitTokens":2000,"cacheMissTokens":234`, 0, 0, 0, true},
 		{"executor-model-fallback", `"modelRef":"fake/fake-model","usageSource"`, `"modelRef":"","usageSource"`, 468, 112, 2000, false},
-		{"auxiliary-missing-model", `"source":"executor"`, `"source":"planner"`, 468, 112, 2000, false},
+		{"auxiliary-quoted-model", `"source":"executor"`, `"source":"planner"`, 468, 112, 2000, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, wire := reasonix229Fixture(t)

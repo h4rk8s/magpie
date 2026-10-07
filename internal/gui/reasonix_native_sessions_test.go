@@ -32,7 +32,9 @@ func TestReasonix229NativeSessionRoutes(t *testing.T) {
 		}
 	}
 	sessions.Reset()
+	forgetStats()
 	t.Cleanup(sessions.Reset)
+	t.Cleanup(forgetStats)
 	mux := http.NewServeMux()
 	sessionRoutes(mux, folderOnly{})
 	sessionManageRoutes(mux, folderOnly{})
