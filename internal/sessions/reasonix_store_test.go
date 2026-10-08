@@ -227,3 +227,48 @@ func BenchmarkReasonixNativeStoreWarm(b *testing.B) {
 		reasonixFiles()
 	}
 }
+
+func TestReasonixImportedSourceRetainsUsageOnce(t *testing.T) {
+	dir := copyReasonixStore(t, "linear-v4", "sessions-v4")
+	root := filepath.Dir(filepath.Dir(dir))
+	legacy := filepath.Join(root, "sessions", "old.jsonl")
+	os.MkdirAll(filepath.Dir(legacy), 0700)
+	os.WriteFile(legacy, []byte(`{"role":"user","content":"old input","createdAt":1791244800000}`+"\n"), 0600)
+	os.WriteFile(legacy+".meta", []byte(`{"id":"session-a","workspace_root":"/work"}`), 0600)
+	ledger := strings.TrimSuffix(legacy, ".jsonl") + ".turns.jsonl"
+	os.WriteFile(ledger, []byte(reasonixUsageFixture(1, "executor", "magpie/deepseek/deepseek-flash")), 0600)
+	manifest := filepath.Join(dir, "manifest.json")
+	b, _ := os.ReadFile(manifest)
+	var m map[string]any
+	json.Unmarshal(b, &m)
+	m["source"] = map[string]any{"path": legacy, "legacyHeadId": "session-a"}
+	b, _ = json.Marshal(m)
+	os.WriteFile(manifest, b, 0600)
+	s := reasonixOnly(t)
+	if s.ID != "producer-capture" || s.Input != 40 || s.Output != 20 || s.CacheRead != 60 {
+		t.Fatalf("import usage lost or separate session created: %+v", s)
+	}
+	Reset()
+	s = reasonixOnly(t)
+	if s.Input != 40 || s.Output != 20 {
+		t.Fatal("cold import double counted usage")
+	}
+}
+func TestReasonixNativeWorkspaceAuthority(t *testing.T) {
+	body := "Host context\n\n## Workspace\nCurrent workspace: \"/work/native\""
+	digest := sha256.Sum256([]byte(body))
+	content := `<session-context version="1">` + "\n" + body + "\n\nDigest: sha256:" + hex.EncodeToString(digest[:]) + "\n</session-context>"
+	m := reasonixMessage{Origin: "host", Content: content}
+	if reasonixNativeWorkspace(m) != "/work/native" {
+		t.Fatal("native host workspace lost")
+	}
+	m.Origin = "user"
+	if reasonixNativeWorkspace(m) != "" {
+		t.Fatal("human input became workspace metadata")
+	}
+	m.Origin = "host"
+	m.Content = strings.Replace(content, "Host context", "damaged context", 1)
+	if reasonixNativeWorkspace(m) != "" {
+		t.Fatal("invalid context digest trusted")
+	}
+}

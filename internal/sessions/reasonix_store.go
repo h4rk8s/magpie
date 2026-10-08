@@ -144,7 +144,10 @@ func reasonixNativeFiles(chosen map[string][]file) {
 			for id, source := range chosen {
 				if len(source) > 0 && filepath.Clean(source[0].path) == filepath.Clean(m.Source.Path) {
 					if len(source) > 1 {
-						pair = append(pair, source[1:]...)
+						for _, ledger := range source[1:] {
+							ledger.key = f.key
+							pair = append(pair, ledger)
+						}
 					}
 					if id != m.ID {
 						delete(chosen, id)
@@ -517,7 +520,11 @@ func parseReasonixStore(f file) *state {
 	}
 	p, err := reasonixProjectStore(f.path, true)
 	reasonixStoreFailures.Lock()
-	reasonixStoreFailures.dirs[filepath.Dir(f.path)] = err != nil
+	if err != nil {
+		reasonixStoreFailures.dirs[filepath.Dir(f.path)] = true
+	} else {
+		delete(reasonixStoreFailures.dirs, filepath.Dir(f.path))
+	}
 	reasonixStoreFailures.Unlock()
 	if err != nil {
 		s.UsageIncomplete = true
