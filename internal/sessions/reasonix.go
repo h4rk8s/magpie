@@ -246,7 +246,7 @@ func reasonixLine(s *state, b []byte, main bool) {
 		return
 	}
 	if m.Role == "user" && s.Title == "" {
-		s.Title = title(m.userText())
+		s.Title = title(reasonixTitleText(m))
 	}
 	// A model identity is useful even when this release stores no session
 	// token counts. Keep presence separate from usage; never infer tokens.
@@ -367,6 +367,30 @@ func (m reasonixMessage) userText() string {
 		return *m.RawContent
 	}
 	return m.Content
+}
+
+// Preview only: preserve original transcript bytes and explicit raw input.
+// These leading blocks are the producer's TransientUserBlockTags contract.
+var reasonixTitleBlocks = regexp.MustCompile(`(?s)^\s*<(response-language|reasoning-language|memory-update|background-jobs|active-goal|autoresearch-runtime|hook-context|capability-route|interrupted-turn-recovery|execution-policy)(?:\s+[^>]*)?>.*?</(?:response-language|reasoning-language|memory-update|background-jobs|active-goal|autoresearch-runtime|hook-context|capability-route|interrupted-turn-recovery|execution-policy)>\s*`)
+
+func reasonixTitleText(m reasonixMessage) string {
+	if m.RawContent != nil {
+		return *m.RawContent
+	}
+	text := m.Content
+	for {
+		stripped := reasonixTitleBlocks.ReplaceAllString(text, "")
+		if stripped == text {
+			break
+		}
+		text = stripped
+	}
+	text = strings.TrimSpace(text)
+	// Old compaction summaries are model context, not a user title.
+	if m.Origin != "user" && strings.HasPrefix(text, "<compaction-summary>") {
+		return ""
+	}
+	return text
 }
 
 var reasonixWorkspaceLine = regexp.MustCompile(`(?m)^Current workspace: ("(?:[^"\\]|\\.)*")\.`)

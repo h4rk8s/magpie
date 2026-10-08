@@ -26,7 +26,7 @@ var reasonixStoreFailures = struct {
 	dirs map[string]bool
 }{dirs: map[string]bool{}}
 
-const reasonixStoreRevision = "reasonix-store-v2:"
+const reasonixStoreRevision = "reasonix-store-v3:"
 const reasonixFrameLimit = 8 << 20
 
 type reasonixStoreManifest struct {
@@ -426,7 +426,7 @@ func reasonixProjectStore(path string, summary bool) (*reasonixStoreProjection, 
 					return true
 				})
 				if m.Role == "user" {
-					m.Content = title(m.Content)
+					m.Content = title(reasonixTitleText(m))
 					if m.RawContent != nil {
 						v := title(*m.RawContent)
 						m.RawContent = &v

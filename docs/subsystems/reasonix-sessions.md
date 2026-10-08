@@ -165,3 +165,7 @@ external objects and both host layouts. `TestReasonixAllStoreCodecs`,
 `TestReasonixStoreResumeTailAndRewrite`, replacement/integrity tests and
 `TestReasonixFramedNativeSessionRoutes` cover discovery through the real HTTP
 handlers. Live user-history verification is separate from those public fixtures.
+
+### Unmetered history and previews
+
+Retained authored messages still contribute to session/message totals when no token receipt or model attribution survives. Activity is accumulated before applying the store's last event timestamp. Preview titles strip the producer's leading transient context blocks and skip legacy compaction summaries; explicit raw user input takes precedence. Transcript contents remain unchanged. Native summary revisions invalidate older cached previews.

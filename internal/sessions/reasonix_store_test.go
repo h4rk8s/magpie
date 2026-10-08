@@ -305,3 +305,28 @@ func TestReasonixNativeUnmeteredHistoryStillCounts(t *testing.T) {
 		t.Fatal("cold title changed")
 	}
 }
+
+func TestReasonixTitleSkipsInjectedBlocks(t *testing.T) {
+	for _, tag := range strings.Fields("response-language reasoning-language memory-update background-jobs active-goal autoresearch-runtime hook-context capability-route interrupted-turn-recovery execution-policy") {
+		t.Run(tag, func(t *testing.T) {
+			block := "<" + tag + ` event="SessionStart">` + strings.Repeat("context ", 40) + "</" + tag + ">"
+			if got := reasonixTitleText(reasonixMessage{Role: "user", Content: block + "\nreal question"}); got != "real question" {
+				t.Fatalf("preview=%q", got)
+			}
+			if got := reasonixTitleText(reasonixMessage{Role: "user", Content: block}); got != "" {
+				t.Fatal("pure host block has title")
+			}
+		})
+	}
+	summary := "<compaction-summary>earlier conversation</compaction-summary>"
+	if got := reasonixTitleText(reasonixMessage{Role: "user", Content: summary}); got != "" {
+		t.Fatal("summary became title")
+	}
+	if got := reasonixTitleText(reasonixMessage{Role: "user", Origin: "user", Content: summary}); got != summary {
+		t.Fatal("explicit user text lost")
+	}
+	raw := "<hook-context>literal user text</hook-context>"
+	if got := reasonixTitleText(reasonixMessage{Role: "user", RawContent: &raw}); got != raw {
+		t.Fatal("raw user text lost")
+	}
+}
