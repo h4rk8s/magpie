@@ -30,7 +30,8 @@ type sessionJSON struct {
 }
 
 type sessionsJSON struct {
-	Sessions []sessionJSON `json:"sessions"`
+	Sessions            []sessionJSON `json:"sessions"`
+	UnsupportedReasonix int           `json:"unsupported_reasonix,omitempty"`
 	// Terminal is set where magpie can open Terminal on the session: the
 	// Mac app, not a browser tab that may be on another computer.
 	Terminal bool     `json:"terminal"`
@@ -50,6 +51,7 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 		for _, d := range sessions.Dirs() {
 			out.Dirs = append(out.Dirs, tilde(d))
 		}
+		out.UnsupportedReasonix = sessions.UnsupportedReasonixStores()
 		list := sessions.List(n)
 		since := time.Now()
 		for _, s := range list {

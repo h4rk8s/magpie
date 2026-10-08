@@ -25,6 +25,18 @@ Malformed/unreadable metadata is not an empty one. Sidecars, subagent directorie
 and archive/import trees are not additional conversations. Copies with one id
 count once: newest transcript wins, lexical path breaks ties.
 
+## Native store compatibility
+
+The current reader does not decode framed `sessions-v4` or
+`desktop-sessions-v5/by-id` stores. `UnsupportedReasonixStores` checks for
+manifest/frame file pairs without opening Reasonix or modifying its stores.
+`GET /api/sessions` exposes `unsupported_reasonix` as a count of unreadable
+store directories, not a conversation count or a usage estimate. Under All
+or Reasonix, the Usage Sessions page warns that those sessions and usage are
+excluded, including when readable legacy sessions are present. An empty
+filtered list no longer implies that no Reasonix conversation exists. Other
+agent filters retain their normal empty state.
+
 ## Usage sources and release lines
 
 Reasonix **1.x** writes `.turns.jsonl` usage events. That ledger takes precedence

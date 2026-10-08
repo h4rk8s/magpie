@@ -16093,6 +16093,8 @@ function renderSessions() {
 
   const stats = $("#sessStats");
   stats.replaceChildren();
+  const unsupportedReasonix = (sessAgent === "all" || sessAgent === "reasonix") && sessions?.unsupported_reasonix > 0;
+  const compatibilityNote = t("Reasonix has {n} native v4/v5 session stores that this version cannot read. These sessions and their usage are not included.", { n: sessions?.unsupported_reasonix || 0 });
   const box = $("#sessList");
   box.replaceChildren();
   const chart = $("#sessChart");
@@ -16102,7 +16104,7 @@ function renderSessions() {
     stats.classList.remove("six");
     stats.classList.add("empty");
     const filtered = sessAgent !== "all" || sessModel || sessFolder || q;
-    stats.append(el("div", "none", !all.length && !rows.length ? t("No sessions yet. Claude Code's, Codex's, OpenCode's and Pi's sessions on this computer show up here, with what each cost and the command that resumes it.") : filtered ? t("No session matches.") : t("Nothing in this range.")));
+    stats.append(el("div", "none", unsupportedReasonix ? compatibilityNote : !all.length && !rows.length ? t("No sessions yet. Claude Code's, Codex's, OpenCode's and Pi's sessions on this computer show up here, with what each cost and the command that resumes it.") : filtered ? t("No session matches.") : t("Nothing in this range.")));
     box.hidden = true;
     chart.hidden = true;
     grid.hidden = true;
@@ -16151,7 +16153,7 @@ function renderSessions() {
     if (!list.length && q) box.append(el("div", "empty-state", t("No session matches.")));
   }
   const dirs = (sessions?.dirs || []).join(" · ");
-  $("#sessNote").textContent = t("Totals count every session in the agents' own files; the list is the latest {n} by activity · {dirs}", { n: all.length, dirs });
+  $("#sessNote").textContent = unsupportedReasonix ? compatibilityNote : t("Totals count every session in the agents' own files; the list is the latest {n} by activity · {dirs}", { n: all.length, dirs });
 }
 
 // sessSums adds up usage rows by one of their fields, the most tokens first

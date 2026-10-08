@@ -106,3 +106,28 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     });
   }
 }
+
+for (const lang of ["en", "zh"]) {
+  test(`chromium ${lang}: unsupported Reasonix stores are not a normal empty filter`, async (t) => {
+    const browser = await chromium.launch({ channel: "chromium" });
+    t.after(() => browser.close());
+    const page = await (await browser.newContext()).newPage();
+    page.setDefaultTimeout(8000);
+    const normal = serve(lang);
+    await page.route("**/*", async route => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/sessions") return route.fulfill({json:{sessions:[],dirs:[],unsupported_reasonix:4}});
+      if (u.pathname === "/api/sessions/stats") return route.fulfill({json:{from:today,to:today,days:[],agents:{reasonix:"Reasonix Studio",codex:"Codex"},sessions:[]}});
+      return normal(route);
+    });
+    await page.addInitScript(() => { localStorage.setItem("magpie.usageTab","sessions");localStorage.setItem("magpie.sessRange","7d"); });
+    await page.goto("http://magpie.test/?view=usage");
+    const warning = lang === "zh" ? "尚不支持读取" : "cannot read";
+    await page.locator("#sessStats").getByText(warning,{exact:false}).waitFor();
+    assert.match(await page.locator("#sessNote").textContent(), /v4\/v5/);
+    await page.locator('#sessAgent .opt[data-agent="reasonix"]').click();
+    assert.match(await page.locator("#sessStats").textContent(), /v4\/v5/);
+    await page.locator('#sessAgent .opt[data-agent="codex"]').click();
+    assert.doesNotMatch(await page.locator("#sessStats").textContent(), /v4\/v5/);
+  });
+}
