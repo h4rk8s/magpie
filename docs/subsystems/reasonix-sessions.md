@@ -169,3 +169,33 @@ handlers. Live user-history verification is separate from those public fixtures.
 ### Unmetered history and previews
 
 Retained authored messages still contribute to session/message totals when no token receipt or model attribution survives. Activity is accumulated before applying the store's last event timestamp. Preview titles strip the producer's leading transient context blocks and skip legacy compaction summaries; explicit raw user input takes precedence. Transcript contents remain unchanged. Native summary revisions invalidate older cached previews.
+
+
+## Historical recovery and manual tools
+
+Supported input is selected by file structure and explicit codec, not a promise
+that every future version is readable: legacy JSONL + metadata, 1.x turn ledgers,
+2.29.0 wire/telemetry, and events/v3, linear/v3, linear/v3.1, linear/v4 canonical
+stores. Directory versions with known codecs remain readable; unknown mandatory
+events/codecs and corrupt committed data retain diagnostics. Missing usage is
+separate from missing conversation content.
+
+[Offline recovery tools](../../tools/reasonix-history/README.md) reconcile retained
+ledger receipts with daily statistics by default. An explicit estimate option
+accepts a reviewed activity index and generates per-record evidence, per-session
+totals and a candidate overlay without modifying source histories or installing
+anything. Timestamp proximity is a heuristic ownership decision, never an exact
+identity join. No token amounts are inferred from text.
+
+The local BYOK experiment attributed 11,937 daily records to 32 historical
+sessions. The latest tool run classified 519 as measured, 5,683 high, 1,902
+medium and 3,833 low evidence grades; all session ownership decisions matched
+the installed snapshot (54 receipt matches were promoted from high to measured
+by exact integer-millisecond reconciliation).
+Global token totals were conserved through the real session summary read path.
+Those are private local snapshot results, not public fixtures, probabilities or
+proof of correct individual ownership. Its removable overlay reader and estimated
+UI labels are a separate local semantic patch, **not included in this PR**.
+Upstream has no importer for that candidate file in this change. The tool's index
+export and automatic ongoing attribution remain explicit gaps. Future exact
+attribution requires persisted producer session/request identities.
