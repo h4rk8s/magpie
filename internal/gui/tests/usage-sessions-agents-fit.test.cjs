@@ -122,12 +122,12 @@ for (const lang of ["en", "zh"]) {
     });
     await page.addInitScript(() => { localStorage.setItem("magpie.usageTab","sessions");localStorage.setItem("magpie.sessRange","7d"); });
     await page.goto("http://magpie.test/?view=usage");
-    const warning = lang === "zh" ? "尚不支持读取" : "cannot read";
+    const warning = lang === "zh" ? "无法读取" : "unreadable";
     await page.locator("#sessStats").getByText(warning,{exact:false}).waitFor();
-    assert.match(await page.locator("#sessNote").textContent(), /v4\/v5/);
+    assert.match(await page.locator("#sessNote").textContent(), /unreadable|无法读取|読み取れない|unlesbare/);
     await page.locator('#sessAgent .opt[data-agent="reasonix"]').click();
-    assert.match(await page.locator("#sessStats").textContent(), /v4\/v5/);
+    assert.match(await page.locator("#sessStats").textContent(), /unreadable|无法读取|読み取れない|unlesbare/);
     await page.locator('#sessAgent .opt[data-agent="codex"]').click();
-    assert.doesNotMatch(await page.locator("#sessStats").textContent(), /v4\/v5/);
+    assert.doesNotMatch(await page.locator("#sessStats").textContent(), /unreadable|无法读取|読み取れない|unlesbare/);
   });
 }

@@ -428,7 +428,7 @@ func allFiles() []file {
 // Codex's, and the other agents' where they keep sessions on this computer.
 func Dirs() []string {
 	out := []string{ClaudeDir(), CodexDir()}
-	if len(reasonixSessionDirs()) != 0 {
+	if len(reasonixSessionDirs()) != 0 || len(reasonixStoreDirs()) != 0 {
 		out = append(out, ReasonixDir())
 	}
 	for _, d := range []struct{ dir, sessions string }{
@@ -992,7 +992,11 @@ func assemble(fs []file, price func(string) *catalog.Price) (Session, bool) {
 	if !s.ReadOnly {
 		s.Resume = resumeCommand(s.WSL, s.Agent, s.ID, s.Cwd)
 		if s.Agent == "reasonix" && runtime.GOOS != "windows" {
-			s.Resume = "reasonix --resume " + shellQuote(s.Path)
+			p := s.Path
+			if filepath.Base(p) == "events.frames" || filepath.Base(p) == "events.jsonl" {
+				p = s.ID
+			}
+			s.Resume = "reasonix --resume " + shellQuote(p)
 		}
 	}
 	s.Carry, s.Transcript = carries(s), HasTranscript(s.Agent)
@@ -1040,6 +1044,9 @@ func parserFor(agent string) sessionParser {
 
 // parse reads a file on from where old left it, or from the start.
 func parse(f file, old *state) *state {
+	if f.agent == "reasonix" && strings.HasPrefix(f.rev, reasonixStoreRevision) {
+		return parseReasonixStore(f)
+	}
 	if f.agent == "reasonix" && strings.HasSuffix(f.path, ".wire.jsonl") {
 		return parseReasonixWire(f)
 	}

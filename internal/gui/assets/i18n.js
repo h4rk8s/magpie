@@ -4,7 +4,7 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
-    "Reasonix has {n} native v4/v5 session stores that this version cannot read. These sessions and their usage are not included.": "检测到 {n} 个 Reasonix 原生 v4/v5 会话存储，当前版本尚不支持读取。这些会话及用量未计入。",
+    "Reasonix has {n} session stores with unreadable or unknown data. Their history may be incomplete.": "有 {n} 个 Reasonix 会话存储存在无法读取或未知的数据，其历史可能不完整。",
     "Partial usage history": "用量历史不完整",
     "Only retained native usage is counted; older records are unavailable.": "仅统计现存的本地用量记录，缺失的历史记录无法计入。",
     "No installed fonts found": "未找到已安装字体",
@@ -3533,7 +3533,7 @@ const I18N = {
     "credits": "积分",
   },
   ja: {
-    "Reasonix has {n} native v4/v5 session stores that this version cannot read. These sessions and their usage are not included.": "Reasonix のネイティブ v4/v5 セッションストアが {n} 件あります。このバージョンでは読み取れないため、会話と使用量は集計に含まれません。",
+    "Reasonix has {n} session stores with unreadable or unknown data. Their history may be incomplete.": "読み取れない、または未知のデータを含む Reasonix セッションストアが {n} 件あります。履歴が不完全な可能性があります。",
     "Partial usage history": "使用履歴が不完全です",
     "Only retained native usage is counted; older records are unavailable.": "保存されているローカル使用記録のみを集計します。失われた履歴は含まれません。",
     "No installed fonts found": "インストール済みフォントが見つかりません",
@@ -7047,7 +7047,7 @@ const I18N = {
     "Main navigation": "メインナビゲーション",
   },
   de: {
-    "Reasonix has {n} native v4/v5 session stores that this version cannot read. These sessions and their usage are not included.": "Reasonix hat {n} native v4/v5-Sitzungsspeicher, die diese Version nicht lesen kann. Diese Sitzungen und ihre Nutzung sind nicht enthalten.",
+    "Reasonix has {n} session stores with unreadable or unknown data. Their history may be incomplete.": "{n} Reasonix-Sitzungsspeicher enthalten unlesbare oder unbekannte Daten. Ihr Verlauf ist möglicherweise unvollständig.",
     "Partial usage history": "Unvollständiger Nutzungsverlauf",
     "Only retained native usage is counted; older records are unavailable.": "Nur erhaltene lokale Nutzungsdaten werden gezählt; ältere Datensätze sind nicht verfügbar.",
     "No installed fonts found": "Keine installierten Schriften gefunden",

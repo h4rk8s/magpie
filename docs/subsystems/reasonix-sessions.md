@@ -27,15 +27,37 @@ count once: newest transcript wins, lexical path breaks ties.
 
 ## Native store compatibility
 
-The current reader does not decode framed `sessions-v4` or
-`desktop-sessions-v5/by-id` stores. `UnsupportedReasonixStores` checks for
-manifest/frame file pairs without opening Reasonix or modifying its stores.
-`GET /api/sessions` exposes `unsupported_reasonix` as a count of unreadable
-store directories, not a conversation count or a usage estimate. Under All
-or Reasonix, the Usage Sessions page warns that those sessions and usage are
-excluded, including when readable legacy sessions are present. An empty
-filtered list no longer implies that no Reasonix conversation exists. Other
-agent filters retain their normal empty state.
+[`reasonix_store.go`](../../internal/sessions/reasonix_store.go) reads all currently
+produced canonical codecs: events/v3, linear/v3, linear/v3.1 and linear/v4.
+Discovery covers global/project `sessions-v3`, `sessions-v4` and Studio's
+`desktop-sessions-v5/by-id`; the v5 directory still contains the linear/v4 codec.
+Directory labels do not choose the decoder: the manifest's explicit codec does.
+
+JSONL commits require a complete newline. Framed transactions require valid RX4F
+headers, bounded Zstandard frames, contiguous sequence/event counts and an
+end-record SHA-256. Incomplete writer tails remain invisible until committed.
+Referenced payloads are read from the producer's content-addressed object root;
+length and SHA-256 are verified. The reader never takes a writer lease, repairs
+logs, updates Reasonix caches or migrates a store. Each scan is bounded to the
+file size observed at open, so an active appender cannot prolong it indefinitely.
+
+Canonical message identity handles complete/upsert/retract and history/import
+replacement. Provider context replacement and compaction do not erase displayed
+history. Titles and model identity come from committed events; message/commit
+timestamps supply activity dates. The exact workspace marker or host workspace
+message supplies cwd; lossy directory slugs are not reverse-decoded. A native
+successor replaces its imported legacy source, preserving explicitly linked
+retained usage sidecars without counting another conversation.
+
+Summary caches contain aggregates only. Changed stores rebuild a bounded-text
+message projection; unchanged stores reuse summaries. Transcript reads resolve
+final identity/order first, then materialize only the shared transcript window.
+Large external objects are verified when read, not copied into Magpie's cache.
+
+`UnsupportedReasonixStores` now counts unknown/malformed store manifests or
+observed decode failures, rather than every v4/v5 directory. The Usage page's
+diagnostic remains available for actual failures. It must never replace ordinary
+readable native sessions with an unsupported-format warning.
 
 ## Usage sources and release lines
 
@@ -94,9 +116,10 @@ reply counts and model dates. Truncation, sampled prefix or identity changes
 rebuild incremental state. An unsampled same-size rewrite is not guaranteed
 detectable by the shared bounded prefix contract.
 
-`TranscriptOf` reads text/thinking/tool calls/results with shared limits. Unix
-resume quotes the native path. Deletion and cross-agent conversion are unsupported.
-Framed `sessions-v4`/`desktop-sessions-v5` stores need separate codecs. Native
+`TranscriptOf` reads text/thinking/tool calls/results with shared limits. Unix legacy
+resume quotes the native transcript path. Deletion and cross-agent conversion are unsupported.
+Canonical stores use the read-only codecs above. Their resume selector is a
+native session identity, not the binary log path. Native
 request rows, conversation tracing and library targets are outside this reader.
 Gateway request accounting remains independent, avoiding a second native copy
 of routed requests in that ledger.
@@ -125,3 +148,20 @@ The earlier read-only native-history observation was against the local 1.x
 installation `v1.39.4-74-g4a0505420`; historical files have no writer-version stamp.
 That observation did not establish the published 2.x file format. The real 2.29.0
 captures above replace the earlier source-inferred 2.x fixtures and conclusions.
+
+
+## Canonical-store usage boundary
+
+The current native engine opens an in-memory turn ledger (`openTurnLedger` in
+Reasonix) and persists daily provider statistics without a session identity.
+Those records cannot reconstruct per-session usage, and timestamps are not an
+identity join. Canonical conversations remain visible with `usage_incomplete`;
+explicitly linked legacy ledgers retain their known usage. Gateway request
+accounting remains the authoritative record for new routed requests. A missing
+native session usage receipt is not presented as known zero spend.
+
+Producer-generated fixtures in `testdata/reasonix-stores` cover all four codecs,
+external objects and both host layouts. `TestReasonixAllStoreCodecs`,
+`TestReasonixStoreResumeTailAndRewrite`, replacement/integrity tests and
+`TestReasonixFramedNativeSessionRoutes` cover discovery through the real HTTP
+handlers. Live user-history verification is separate from those public fixtures.

@@ -91,3 +91,70 @@ func TestReasonix229NativeSessionRoutes(t *testing.T) {
 		t.Fatalf("native stats not discoverable: %+v", stats)
 	}
 }
+
+func TestReasonixFramedNativeSessionRoutes(t *testing.T) {
+	home := sandboxHome(t)
+	root := filepath.Join(home, "reasonix-state")
+	t.Setenv("REASONIX_STATE_HOME", root)
+	dir := filepath.Join(root, "projects", "fixture", "sessions-v4", "producer-capture")
+	var copyTree func(string, string)
+	copyTree = func(src, dst string) {
+		es, e := os.ReadDir(src)
+		if e != nil {
+			t.Fatal(e)
+		}
+		os.MkdirAll(dst, 0700)
+		for _, x := range es {
+			a, b := filepath.Join(src, x.Name()), filepath.Join(dst, x.Name())
+			if x.IsDir() {
+				copyTree(a, b)
+			} else {
+				v, e := os.ReadFile(a)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = os.WriteFile(b, v, 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
+		}
+	}
+	source := filepath.Join("..", "sessions", "testdata", "reasonix-stores")
+	copyTree(filepath.Join(source, "linear-v4"), dir)
+	copyTree(filepath.Join(source, ".content-v1"), filepath.Join(filepath.Dir(dir), ".content-v1"))
+	sessions.Reset()
+	forgetStats()
+	t.Cleanup(sessions.Reset)
+	t.Cleanup(forgetStats)
+	mux := http.NewServeMux()
+	sessionRoutes(mux, folderOnly{})
+	sessionManageRoutes(mux, folderOnly{})
+	for _, path := range []string{"/api/sessions", "/api/sessions/manage?agent=reasonix"} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		var out struct {
+			Sessions    []sessions.Session `json:"sessions"`
+			Unsupported int                `json:"unsupported_reasonix"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatal("invalid sessions response")
+		}
+		found := false
+		for _, s := range out.Sessions {
+			if s.Agent == "reasonix" {
+				found = true
+				if s.Title != "Native producer capture" || !s.Transcript || !s.UsageIncomplete {
+					t.Fatal("native summary contract missing")
+				}
+			}
+		}
+		if !found || out.Unsupported != 0 {
+			t.Fatal("framed store is hidden or marked unsupported")
+		}
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/sessions/transcript?agent=reasonix&id=producer-capture", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "你好，已接入") || !strings.Contains(w.Body.String(), "test reasoning") {
+		t.Fatal("native body is not accessible through HTTP handler")
+	}
+}

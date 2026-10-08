@@ -16094,7 +16094,7 @@ function renderSessions() {
   const stats = $("#sessStats");
   stats.replaceChildren();
   const unsupportedReasonix = (sessAgent === "all" || sessAgent === "reasonix") && sessions?.unsupported_reasonix > 0;
-  const compatibilityNote = t("Reasonix has {n} native v4/v5 session stores that this version cannot read. These sessions and their usage are not included.", { n: sessions?.unsupported_reasonix || 0 });
+  const compatibilityNote = t("Reasonix has {n} session stores with unreadable or unknown data. Their history may be incomplete.", { n: sessions?.unsupported_reasonix || 0 });
   const box = $("#sessList");
   box.replaceChildren();
   const chart = $("#sessChart");

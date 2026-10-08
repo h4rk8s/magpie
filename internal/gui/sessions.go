@@ -51,8 +51,8 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 		for _, d := range sessions.Dirs() {
 			out.Dirs = append(out.Dirs, tilde(d))
 		}
-		out.UnsupportedReasonix = sessions.UnsupportedReasonixStores()
 		list := sessions.List(n)
+		out.UnsupportedReasonix = sessions.UnsupportedReasonixStores()
 		since := time.Now()
 		for _, s := range list {
 			if !s.Start.IsZero() && s.Start.Before(since) {

@@ -140,6 +140,7 @@ func reasonixFiles() []file {
 			}
 		}
 	}
+	reasonixNativeFiles(chosen)
 	ids := make([]string, 0, len(chosen))
 	for id := range chosen {
 		ids = append(ids, id)
@@ -161,6 +162,10 @@ func reasonixSidecar(stem string) bool {
 }
 
 type reasonixMessage struct {
+	NativeSeq    uint64  `json:"-"`
+	DisplaySize  int     `json:"-"`
+	ID           string  `json:"id"`
+	Origin       string  `json:"origin"`
 	Role         string  `json:"role"`
 	ModelRef     string  `json:"modelRef"`
 	HostAuthored bool    `json:"host_authored"`
@@ -234,7 +239,7 @@ func reasonixLine(s *state, b []byte, main bool) {
 		return
 	}
 	var m reasonixMessage
-	if json.Unmarshal(b, &m) != nil || m.Local || m.HostAuthored {
+	if json.Unmarshal(b, &m) != nil || m.Local || m.HostAuthored || m.Origin == "host" {
 		return
 	}
 	if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
@@ -320,32 +325,39 @@ func reasonixMetadata(s *state, f file) {
 }
 
 func reasonixTranscript(path string, add func(bool, Part) bool) error {
+	if filepath.Base(path) == "events.frames" || filepath.Base(path) == "events.jsonl" {
+		return reasonixStoreTranscript(path, add)
+	}
 	_, err := scanAt(path, 0, nil, func(b []byte, _, _ int64) bool {
 		var m reasonixMessage
 		if json.Unmarshal(b, &m) != nil {
 			return true
 		}
-		if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
-			return true
-		}
-		if m.Thinking != "" && !add(false, Part{Role: m.Role, Kind: "thinking", Text: m.Thinking}) {
-			return false
-		}
-		kind := "text"
-		if m.Role == "tool" {
-			kind = "tool_result"
-		}
-		if !add(m.Role == "user", Part{Role: m.Role, Kind: kind, Name: m.Name, Text: m.userText()}) {
-			return false
-		}
-		for _, tool := range m.Tools {
-			if !add(false, Part{Role: m.Role, Kind: "tool_use", Name: tool.Name, Text: tool.Arguments}) {
-				return false
-			}
-		}
-		return true
+		return reasonixMessageParts(m, add)
 	})
 	return err
+}
+
+func reasonixMessageParts(m reasonixMessage, add func(bool, Part) bool) bool {
+	if m.Role != "user" && m.Role != "assistant" && m.Role != "tool" {
+		return true
+	}
+	if m.Thinking != "" && !add(false, Part{Role: m.Role, Kind: "thinking", Text: m.Thinking}) {
+		return false
+	}
+	kind := "text"
+	if m.Role == "tool" {
+		kind = "tool_result"
+	}
+	if !add(m.Role == "user", Part{Role: m.Role, Kind: kind, Name: m.Name, Text: m.userText()}) {
+		return false
+	}
+	for _, tool := range m.Tools {
+		if !add(false, Part{Role: m.Role, Kind: "tool_use", Name: tool.Name, Text: tool.Arguments}) {
+			return false
+		}
+	}
+	return true
 }
 
 // raw_content is the human input before the host wraps workspace, skills and
