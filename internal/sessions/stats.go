@@ -213,6 +213,11 @@ func statsAt(days int, now time.Time) Stats {
 			sh.prompts += d.Prompts
 			sh.replies += d.Replies
 			pd.messages += d.Prompts + d.Replies
+			// A Reasonix history can retain authored turns without a token
+			// receipt or per-message model. Presence is still known.
+			if f.agent == "reasonix" && d.Prompts+d.Replies > 0 {
+				sh.dates[date] = true
+			}
 			for name, n := range d.Tools {
 				sh.tools[name] += n
 				pd.tools[ToolCategory(name)] += n

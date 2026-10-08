@@ -272,3 +272,36 @@ func TestReasonixNativeWorkspaceAuthority(t *testing.T) {
 		t.Fatal("invalid context digest trusted")
 	}
 }
+
+func TestReasonixNativeUnmeteredHistoryStillCounts(t *testing.T) {
+	dir := copyReasonixStore(t, "linear-v4", "sessions-v4")
+	path := filepath.Join(dir, "events.frames")
+	original, _ := os.ReadFile(path)
+	body := map[string]any{"messages": []map[string]any{
+		{"id": "host", "role": "user", "content": `<session-context version="1">host snapshot</session-context>`},
+		{"id": "user", "role": "user", "content": "real question", "createdAt": time.Date(2026, 10, 8, 1, 0, 0, 0, time.UTC).UnixMilli()},
+		{"id": "answer", "role": "assistant", "content": "answer", "createdAt": time.Date(2026, 10, 8, 1, 0, 10, 0, time.UTC).UnixMilli()},
+	}}
+	batch := appendReasonixBatch(t, path, 6, "history/replace", body)
+	os.WriteFile(path, append(append(original, batch...), appendReasonixBatch(t, path, 7, "session/title", map[string]any{"title": ""})...), 0600)
+	st := StatsAt(7, time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC))
+	ov := st.Overview("reasonix", "", "", 10)
+	if ov.Count != 1 {
+		t.Fatalf("unmetered history count=%d", ov.Count)
+	}
+	for _, s := range st.Sessions {
+		if s.Agent == "reasonix" {
+			if s.Prompts != 1 || s.Replies != 1 || s.Input != 0 || !s.UsageIncomplete || s.Active != 10 {
+				t.Fatalf("wrong known history: %+v", s)
+			}
+		}
+	}
+	s := reasonixOnly(t)
+	if s.Title != "real question" {
+		t.Fatalf("host snapshot became title: %q", s.Title)
+	}
+	Reset()
+	if s := reasonixOnly(t); s.Title != "real question" {
+		t.Fatal("cold title changed")
+	}
+}

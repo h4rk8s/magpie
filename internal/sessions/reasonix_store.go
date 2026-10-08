@@ -26,7 +26,7 @@ var reasonixStoreFailures = struct {
 	dirs map[string]bool
 }{dirs: map[string]bool{}}
 
-const reasonixStoreRevision = "reasonix-store-v1:"
+const reasonixStoreRevision = "reasonix-store-v2:"
 const reasonixFrameLimit = 8 << 20
 
 type reasonixStoreManifest struct {
@@ -405,6 +405,12 @@ func reasonixProjectStore(path string, summary bool) (*reasonixStoreProjection, 
 			return err
 		}
 		prepare := func(m reasonixMessage) reasonixMessage {
+			// Older producers did not attach provenance to host snapshots.
+			// Recognize the complete envelope before bounding summary text;
+			// explicit user provenance remains authoritative.
+			if m.Role == "user" && m.Origin == "" && strings.HasPrefix(strings.TrimSpace(m.Content), `<session-context version="1">`) && strings.HasSuffix(strings.TrimSpace(m.Content), "</session-context>") {
+				m.Origin = "host"
+			}
 			if cwd := reasonixNativeWorkspace(m); cwd != "" {
 				p.cwd = cwd
 			}
@@ -534,10 +540,12 @@ func parseReasonixStore(f file) *state {
 		if err != nil && s.Named == "" {
 			s.Named = "Reasonix session (read error)"
 		}
-		s.Last = p.last
 		for _, msg := range p.messages {
 			b, _ := json.Marshal(msg)
 			reasonixLine(s, b, true)
+		}
+		if p.last.After(s.Last) {
+			s.Last = p.last
 		}
 		if p.model != "" {
 			if s.Models == nil {
