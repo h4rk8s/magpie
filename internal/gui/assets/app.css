@@ -2605,6 +2605,12 @@ input.words.search-key, input.words.search-url { flex: 1 1 120px; width: auto; m
 /* a usage alert's share or amount: a short number field, its unit beside it */
 .warm-at input.at.num { width: 64px; text-align: right; }
 .warm-at .unit { color: var(--muted); font-size: 12.5px; margin-left: -4px; }
+/* a daily warm-up's times (#1260): each with its ×, then +, wrapping under one another on a narrow window rather than past it */
+.warm-at.times { flex: 0 0 auto; max-width: 65%; align-items: flex-start; }
+.warm-at.times > :not(.warm-times) { flex: none; }
+.warm-at .warm-times { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 8px; min-width: 0; }
+.warm-at .warm-time { display: inline-flex; align-items: center; gap: 2px; }
+.warm-at .warm-rm, .warm-at .warm-add { min-width: 24px; height: 27px; padding: 0 6px; font-size: 14px; line-height: 1; }
 .row.pref .sub .warn { color: var(--amber); }
 .row.pref .sub.wraps { white-space: normal; }
 /* the field's clock and picker in the page's own palette */
@@ -2795,6 +2801,7 @@ body.panel .modal { padding: 16px 12px; }
   body.web .row.pref > .who { flex-basis: 100%; }
   body.web .row.pref .sub { white-space: normal; }
   body.web .row.pref .segs { margin-left: 0; max-width: 100%; flex-wrap: wrap; }
+  body.web .row.pref .warm-at.times { max-width: 100%; }
   body.web .proxy-segs { margin-left: 0; flex-wrap: wrap; justify-content: flex-start; }
   body.web .usage-head { height: auto; min-height: 44px; flex-wrap: wrap; gap: 8px; }
   body.web .usage-head > .segs { max-width: 100%; flex-wrap: wrap; }
@@ -3187,6 +3194,10 @@ body.window .row + .row.agent.conn > .who { min-height: 41px; } /* the line abov
 :where(html[data-fonts]) .ag-code, :where(html[data-fonts]) .ag-diff code, :where(html[data-fonts]) .ag-path { font-style: var(--code-style, inherit); font-weight: var(--code-weight, inherit); font-stretch: var(--code-stretch, 100%); }
 .ag-code { padding: 1px 5px; border-radius: 4px; background: var(--pill); color: var(--fg); }
 .ag-warn { gap: 8px; font-size: 12px; }
+/* a note of several lines: its dot stays by the first line, the words wrap beside it */
+.ag-vl.ag-menu-cap { flex-wrap: nowrap; align-items: flex-start; line-height: 1.6; }
+.ag-menu-cap > .ag-dot { margin-top: calc(0.8em - 3px); }
+.ag-menu-cap > span:last-child { flex: 1; min-width: 0; }
 /* which copy is left on the old list: a sentence that wraps as one, under the warning's words */
 .ag-vl.ag-stale-copy { display: block; padding-left: 14px; font-size: 12px; line-height: 1.6; color: var(--fg-2); }
 .ag-hint { font-size: 12px; color: var(--muted); }
