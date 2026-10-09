@@ -553,6 +553,19 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, con
 	}
 	if from != nil {
 		args = append(args, "--resume", from.session)
+	} else if hasReply(req.Messages) {
+		// no run had the conversation: this one is told it whole, in one
+		// message, its earlier turns marked as such (renderClaudePrompt)
+		images := 0
+		for _, m := range req.Messages {
+			for _, p := range m.Parts {
+				if p.Kind == Image {
+					images++
+				}
+				images += len(p.Images)
+			}
+		}
+		log.Printf("claude: a new Claude Code is told the whole conversation: %d messages, %d images, the last turn marked as the one to answer", len(req.Messages), images)
 	}
 	cmd := binary.command(context.Background(), args...)
 	cmd.Dir = work
@@ -756,6 +769,12 @@ func (b *subscriptionBridge) resume(req *Request, owner string) (*subscriptionRu
 	b.mu.Unlock()
 	if run == nil {
 		return nil, nil
+	}
+	if slices.ContainsFunc(since[len(since)-1].Parts, func(p Part) bool { return p.Kind == ToolResult }) {
+		// said after the "no run waiting" line it follows: the run took
+		// the turn back when the client went away (letGo), and is told it
+		// again from its user message, not the whole conversation
+		log.Printf("claude: a turn taken back goes on in its run, told again from its user message (%d messages)", len(since))
 	}
 	// a run still taking back the turn the client gave up on (letGo) is
 	// waited for: it goes on from before that turn, or ended
@@ -1031,10 +1050,17 @@ func (b *subscriptionBridge) retire(owner string, msgs []Message) {
 // asked for nothing more waits for the conversation's next turn; one that
 // failed, was cut short or went unheard is let go, as is a one-off ask.
 func (r *subscriptionRun) ended(req *Request, said, stop string, ok bool) {
-	// the turn's reply is over: nothing after it (its tool calls' answers
-	// going on) is taken back to before it (letGo)
+	// the turn's reply is over: nothing after it is taken back to before
+	// it (letGo). A reply that calls tools hasn't ended the turn: the
+	// client's results go on with it, and a client that goes away during
+	// what the run says to them takes back the whole turn, its user
+	// message on, as it would before its first call (#1365). Ended there,
+	// the client's next request, its results sent again or the next turn,
+	// found no run and a new one was told the whole conversation.
 	r.mu.Lock()
-	r.turnUUID, r.backKey = "", ""
+	if !ok || stop != "tool" {
+		r.turnUUID, r.backKey = "", ""
+	}
 	r.mu.Unlock()
 	switch {
 	case !ok:
@@ -1367,9 +1393,12 @@ type controlReply struct {
 // a run kept for it is taken back: Claude Code is told to rewind to the
 // turn's message, which stops the reply and leaves its conversation as it
 // was before the turn, and the run waits there again, for the client's
-// resend to go on from the prefix it cached. Any other run — one started
-// for the turn, one with a tool call in the client's hands, one whose
-// Claude Code refuses or doesn't answer — is ended, as before.
+// resend to go on from the prefix it cached. That holds in the reply to
+// the turn's tool results too (#1365): the turn is taken back whole, its
+// tool rounds with it, and the client's next request is told the turn
+// since its user message, not the whole conversation. Any other run — one
+// started for the turn, one with a tool call in the client's hands, one
+// whose Claude Code refuses or doesn't answer — is ended, as before.
 func (r *subscriptionRun) letGo() {
 	r.mu.Lock()
 	turn, back := r.turnUUID, r.backKey
@@ -2261,7 +2290,19 @@ func renderClaudePrompt(req *Request) ([]map[string]any, error) {
 		text.Reset()
 	}
 	offered := offeredTools(req.Tools)
-	for _, m := range req.Messages {
+	// A conversation with replies in it is told in two parts: the turns
+	// already answered, and the one to answer now (from the user message
+	// after the last reply that calls no tool, as nextTurn splits it). Told
+	// as one stretch of Human:/Assistant: text, the images of earlier turns
+	// read as just sent, and the model answered them again (#1365).
+	split := historyEnd(req.Messages)
+	for i, m := range req.Messages {
+		if split > 0 && i == 0 {
+			text.WriteString(historyOpen)
+		}
+		if split > 0 && i == split {
+			text.WriteString(historyClose)
+		}
 		label := "Human"
 		if m.Role == "assistant" {
 			label = "Assistant"
@@ -2270,7 +2311,33 @@ func renderClaudePrompt(req *Request) ([]map[string]any, error) {
 		blocks = renderParts(blocks, &text, m.Parts, offered)
 		text.WriteString("\n\n")
 	}
+	if split > 0 {
+		text.WriteString("</current_turn>")
+	}
 	return closeBlocks(blocks, &text), nil
+}
+
+// historyOpen and historyClose wrap the turns a run started anew is told
+// were answered already, before the turn it is to answer (renderClaudePrompt).
+const (
+	historyOpen = "<conversation_history>\nThe conversation so far, each turn of it answered already. " +
+		"Images and files in it were sent with those earlier messages: none of them is new, and none needs answering again.\n\n"
+	historyClose = "</conversation_history>\n\n<current_turn>\nThe turn to answer now:\n\n"
+)
+
+// historyEnd is where the turn to answer begins in msgs: the message after
+// the last reply that calls no tool. 0 when there is no such reply, or
+// nothing after it, and the messages are told as one turn.
+func historyEnd(msgs []Message) int {
+	for j := len(msgs) - 1; j >= 0; j-- {
+		if msgs[j].Role == "assistant" && !callsTool(msgs[j]) {
+			if j == len(msgs)-1 {
+				return 0
+			}
+			return j + 1
+		}
+	}
+	return 0
 }
 
 // bridgeName is the name the run's Claude Code has a tool of the caller's
@@ -2410,6 +2477,8 @@ const (
 	runExpired     = "process expired"
 	noRunWaiting   = "no run waiting"
 	accountChanged = "account changed"
+	// another request has the run's calls answered, or is answering them
+	answeredElsewhere = "answered by another request"
 )
 
 // match is findRun, and how the results found their run (byExactID,
@@ -3134,9 +3203,18 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, from 
 	}
 
 	run, results, how := s.subscription.match(req)
+	// Another request has the run's calls answered, or is answering them,
+	// or the run ended. Claude Code's fork sub-agents each start from their
+	// lead's conversation as it stands, a result for each of its calls and
+	// their directive after, so the lead's next turn and every fork it
+	// started answer the same calls at once; a client may also send a turn
+	// again while the first is still answered. The run takes one set of
+	// results only, and is not waiting for this request's once it is past
+	// the turn they were for: this request is its own conversation from
+	// here and gets a run of its own, told it whole. A 409 isn't retried,
+	// and the fork died with it (ylorn on Discord).
 	if run != nil && !run.claimResume() {
-		msg := "the agent's turn is already being resumed"
-		return writeError(w, from, http.StatusConflict, msg), msg
+		run, how = nil, answeredElsewhere
 	}
 	// Tool-call IDs find the process that made them, independently of the
 	// account routing selected. Continuing a different owner's process would

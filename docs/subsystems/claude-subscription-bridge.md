@@ -27,7 +27,34 @@ cache.
 2. `subscriptionBridge.unshelve`: the saved session of a run let go past
    `idleMost` (`b.shelf`, at most `shelfMost`), which a new Claude Code
    starts from with `--resume`, told the turn's messages alone.
-3. `retire`, then a new run told the whole conversation.
+3. `retire`, then a new run told the whole conversation. When it has
+   replies in it, the turns already answered are wrapped in
+   `<conversation_history>`, with a note that the images and files in them
+   were sent with those messages, and the turn to answer (from the message
+   after the last reply that calls no tool, `historyEnd`) in
+   `<current_turn>` (#1365). Told as one stretch of Human:/Assistant: text,
+   earlier images read as just sent. A first turn, or messages with no
+   reply among them, are told as before. `start` logs "a new Claude Code
+   is told the whole conversation" with the message and image counts.
+
+## A turn the client gives up on (`letGo`, #780, #1365)
+
+When the client goes away mid-reply, a run resumed for the turn is told to
+rewind (`rewind_conversation`) to the turn's user message, and waits at the
+conversation before the turn (`backKey`). The turn's id lasts until its
+reply ends without calling a tool: `ended` keeps `turnUUID` and `backKey`
+over a reply that calls tools, so a client that goes away while the run
+answers its tool results also has the whole turn taken back, its tool
+rounds with it. Its next request (the same results sent again, or the next
+turn) then finds no run waiting on the calls ("tool results no run
+waiting"), is resumed in that run at `backKey` and told the turn since its
+user message (logged "a turn taken back goes on in its run"). Before, the
+turn's id was dropped with the reply that called the tool, the run was
+ended, and that request was told the whole conversation in a new run.
+Claude Code 2.1.295 rewinds past a tool round mid-reply (tried against a
+local mock of Anthropic). A run started anew for the turn has nothing to
+rewind to and is still ended; so is one with a call still in the client's
+hands (`pending`).
 
 ## Finding the run: keys
 
@@ -94,6 +121,21 @@ A run started anew still sends every image in the conversation. Replacing
 earlier images with a placeholder would change what the model sees, and
 magpie doesn't do it.
 
+## Tool results another request answers first
+
+A request with tool results finds the run waiting on those calls (`match`)
+and claims it (`claimResume`) until the reply it is resumed for ends. More
+than one request can carry results for the same calls: Claude Code's fork
+sub-agents each start from their lead's conversation as it stands, its
+reply's calls answered with the placeholder "Fork started — processing in
+background" and the fork's directive after, and they come at once with the
+lead's own next turn; a client may also send a turn again while the first
+is still answered. The first to claim the run goes on in it. Each of the
+others, and one whose run has ended, is a conversation of its own from
+there and gets a run started anew (`answeredElsewhere` in the log). It is
+never refused: Claude Code doesn't retry a 409, and the agent that sent it
+stops (ylorn on Discord).
+
 ## The account's allowance on the reply (#1257)
 
 Claude Code tells a run's account allowance in its stream-json
@@ -118,7 +160,7 @@ carries none.
 ## Verification
 
 ```sh
-go test -tags nogui ./internal/gateway/ -run 'ClaudeRewritten|ClaudeSessionTempFiles|ClaudeLetGo|ClaudeSessionFiles|ClaudeOldSessions|ClaudeSubscriptionReplySaysTheAllowance|ClaudeAllowanceHeaders' -count=1
+go test -tags nogui ./internal/gateway/ -run 'ClaudeRewritten|ClaudeSessionTempFiles|ClaudeLetGo|ClaudeSessionFiles|ClaudeOldSessions|ClaudeSubscriptionReplySaysTheAllowance|ClaudeAllowanceHeaders|ClaudeForksAnsweringTheLeadsCalls|ClaudeTurnGivenUpOn|ClaudeToolResultsGivenUpOn|ClaudePromptMarksEarlierTurns' -count=1
 ```
 
 `claude_rewritten_test.go` has a case for each relaxation and one for each

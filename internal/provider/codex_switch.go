@@ -183,7 +183,7 @@ func NextLogin(ctx context.Context, agent string) (from, to string, back, ok boo
 	// (account_caps.go): it is moved off, and none is moved to or back to
 	// till the window it filled renews
 	capped := func(user string, q SubscriptionQuota) bool {
-		return capReached(q, AccountCapOf(agent, user), now)
+		return capReached(q, AccountCapsOf(agent, user), now)
 	}
 	if first != nil && first.On && first.Lapsed == "" {
 		if q, known := u[first.User]; known && q.Error == "" && !usedPast(q, backShare, now) && !capped(first.User, q) {

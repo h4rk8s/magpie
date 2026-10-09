@@ -242,10 +242,20 @@ func groupsIn(entries []Entry) []Group {
 	f := heldOf("file", load)
 	var out []Group
 	hidden := map[string]bool{}
+	var have map[string]bool // the providers magpie has, switched off or not
 	for _, g := range f.Groups {
 		if g.Hidden {
 			hidden[g.ID] = true
 			continue
+		}
+		if strings.HasPrefix(g.ID, "auto-") {
+			if have == nil {
+				have = map[string]bool{}
+				for _, p := range All() {
+					have[p.ID] = true
+				}
+			}
+			g = withoutRemoved(g, have)
 		}
 		out = append(out, withMatches(entries, g))
 	}
@@ -260,6 +270,40 @@ func groupsIn(entries []Entry) []Group {
 		out = append(out, g)
 	}
 	return orderedGroups(out, f.GroupOrder)
+}
+
+// withoutRemoved is a found group the user changed (an "auto-…" id kept
+// in providers.json) without the members of providers magpie no longer
+// has (have): a provider removed leaves the group as it leaves one magpie
+// finds, where they had stayed for the user to take out by hand (Discord).
+// It is how the group is read, not stored, so a provider back under its
+// id (an account shown again) is back in it. A member the user picked a
+// manual group's requests to, or a rule sends to, stays: taken out, the
+// group would send elsewhere unasked, or not save. So does every member
+// when none would be left. A provider switched off keeps its members: the
+// gateway skips them (membersIn) and they are sent to again once it is on.
+func withoutRemoved(g Group, have map[string]bool) Group {
+	gone := func(m string) bool {
+		if strings.HasPrefix(m, GroupPrefix) || IsPattern(m) {
+			return false
+		}
+		pid, _, ok := strings.Cut(m, "/")
+		if !ok || have[pid] || (g.Routing == Manual && m == g.Picked()) {
+			return false
+		}
+		return !slices.ContainsFunc(g.Rules, func(r Rule) bool { return r.Use == m })
+	}
+	if !slices.ContainsFunc(g.Members, gone) {
+		return g
+	}
+	kept := slices.DeleteFunc(slices.Clone(g.Members), gone)
+	if len(kept) == 0 && len(g.Match) == 0 {
+		return g
+	}
+	g.Members = kept
+	g.Off = slices.DeleteFunc(slices.Clone(g.Off), gone)
+	g.Fast = slices.DeleteFunc(slices.Clone(g.Fast), gone)
+	return g
 }
 
 // AutoGroupsOn reports whether magpie finds groups on its own: a model
@@ -472,7 +516,8 @@ func FindGroup(id string) (Group, []Member, bool) {
 // "group/<id>": the group of that id, else the group of that model however
 // a vendor spells it ("grok-4.7" is the group grok-4-7 or auto-grok-4-7).
 // A request for the model is the group's then, as it would be for the
-// group's own id; ok is false when no group has it. An id with a provider
+// group's own id; failing those, the group whose name it is (groupNamed);
+// ok is false when no group has it. An id with a provider
 // in it ("a/m") names that provider's model, never a group.
 func GroupFor(id string) (string, bool) {
 	id = strings.TrimSuffix(strings.TrimSpace(id), "[1m]")
@@ -486,7 +531,41 @@ func GroupFor(id string) (string, bool) {
 			return GroupPrefix + g.ID, true
 		}
 	}
-	return "", false
+	return groupNamed(all, id)
+}
+
+// groupNamed is the group whose name, not its id, the request gave: a
+// client the user typed the group's name into (ZCode's own model field)
+// asks for it so, and a group renamed keeps its id (MOMO on Discord: "DS
+// Flash" was 404 once group set name= gave it that name). The name is
+// matched as the id is, by its slug; only one group may have it, and a
+// model a provider serves by that id is the provider's, not the group's.
+func groupNamed(all []Group, id string) (string, bool) {
+	k := Slug(sameModel(id))
+	if k == "" {
+		return "", false
+	}
+	var hit *Group
+	for i, g := range all {
+		if g.Hidden || strings.TrimSpace(g.Name) == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(g.Name), id) || Slug(sameModel(g.Name)) == k {
+			if hit != nil {
+				return "", false // two groups go by it: neither is meant
+			}
+			hit = &all[i]
+		}
+	}
+	if hit == nil {
+		return "", false
+	}
+	for _, e := range providerEntries() {
+		if e.Model == id || e.ID == id {
+			return "", false
+		}
+	}
+	return GroupPrefix + hit.ID, true
 }
 
 // GroupFinder is FindGroup for looking up many: every provider's models
