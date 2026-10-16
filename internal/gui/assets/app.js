@@ -15381,7 +15381,7 @@ function keyCards(list) {
       || (!p.user && of.length === 1 && list.filter((x) => x.provider === p.provider && plan(x)).length === 1 ? of[0] : null);
     if (!b || b.error || b.asOf || gone.has(b)) continue;
     gone.add(b);
-    merged.set(p, { ...p, balance: b.balance, balanceParts: b.balanceParts, balanceTrend: b.balanceTrend, balanceCard: trayCardID(b) });
+    merged.set(p, { ...p, balance: b.balance, balanceParts: b.balanceParts, balanceFunds: b.balanceFunds, balanceTrend: b.balanceTrend, balanceCard: trayCardID(b) });
   }
   return gone.size ? list.filter((q) => !gone.has(q)).map((q) => merged.get(q) || q) : list;
 }
@@ -16000,8 +16000,9 @@ function balanceCurve(sub) {
   const head = el("div", "qc-head");
   const out = tr.runsOut ? Date.parse(tr.runsOut) : null;
   const pace = el("span", "qc-range");
-  head.append(el("span", "", t("Balance over time")), pace);
+  head.append(el("span", "", t(sub.balanceFunds?.length ? "Total balance over time" : "Balance over time")), pace);
   box.title = t("Solid: the balance as magpie read it. Dashed: a straight line fitted through it since the last top-up, carried on to where it runs out. Click to enlarge.");
+  if (sub.balanceFunds?.length) box.title += "\n" + t("Balance changes can include expired grants and top-ups, not only spending.");
   const W = 300, H = 60;
   const g = sv("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", class: "qc-plot", role: "img" });
   curveZoom(box, g);
@@ -16011,7 +16012,7 @@ function balanceCurve(sub) {
   const sw = el("i");
   sw.style.background = "var(--c1)";
   const last = pts[pts.length - 1];
-  k.append(sw, el("span", "", t("Balance")), el("b", "", balanceAmount(sub, last.v)));
+  k.append(sw, el("span", "", t(sub.balanceFunds?.length ? "Total available" : "Balance")), el("b", "", balanceAmount(sub, last.v)));
   k.title = [t("Latest readings:"), ...pts.slice(-8).reverse().map((p) => balanceAmount(sub, p.v) + " · " + quotaTimeText(p.at, Date.now()))].join("\n");
   legend.append(k);
   if (tr.perDay > 0) legend.append(el("span", "qc-key bc-pace", t("about {amount} a day", { amount: balanceAmount(sub, tr.perDay) })));
@@ -16040,7 +16041,7 @@ function balanceCurve(sub) {
     if (x1 > now) g.append(sv("line", { x1: X(now), x2: X(now), y1: 0, y2: H, class: "qc-now" }));
     pace.textContent = out ? t("Runs out {in} at this pace", { in: untilText(Math.max(out, now + 60e3)) }) : "";
     pace.title = out ? new Date(out).toLocaleString(intlLang()) : "";
-    g.setAttribute("aria-label", t("Balance over time") + (out ? " · " + pace.textContent : ""));
+    g.setAttribute("aria-label", t(sub.balanceFunds?.length ? "Total balance over time" : "Balance over time") + (out ? " · " + pace.textContent : ""));
     axis.replaceChildren(el("span", "", quotaTimeText(x0, now)), el("span", "", quotaTimeText(x1, now)));
   };
   box.append(head, g, axis, legend);
@@ -16645,7 +16646,8 @@ function panelBalances(bals) {
     card.append(who);
     // a balance field with several amounts: the first as the figure,
     // the others each a quiet line, a percent a meter (#420)
-    const parts = q.balanceParts?.length ? q.balanceParts : [{ text: q.balance }];
+    const parts = q.balanceFunds?.length ? [] : q.balanceParts?.length ? q.balanceParts : [{ text: q.balance }];
+    if (q.balanceFunds?.length) card.append(balanceFundsRow(q, false));
     for (const [i, p] of parts.entries()) {
       let amount;
       if (!i && !p.label) card.append(amount = el("b", "pq-amt", p.text));
@@ -17455,6 +17457,7 @@ function fitQuota(g) {
 // panel's rings) (#420). Under it, when it was read, unless the card
 // says that under its windows (when false).
 function balanceRow(sub, why, when = true) {
+  if (sub.balanceFunds?.length) return balanceFundsRow(sub, when);
   const parts = sub.balanceParts;
   const b = el("div", "quota-balance" + (parts?.length ? " parts" : ""));
   b.title = t(why);
@@ -17467,6 +17470,37 @@ function balanceRow(sub, why, when = true) {
     if (p.percent != null) row.append(balanceMeter(p.percent));
     b.append(row);
   }
+  const read = when && readWhen(sub, when === "refresh");
+  if (read) b.append(read);
+  return b;
+}
+
+// balanceFundsRow keeps grants above top-ups, like an allowance above its
+// cash balance. Components are not a capped window: no invented percentage
+// or expiry. The total and its history remain the vendor's total_balance.
+function balanceFundsRow(sub, when) {
+  const b = el("div", "quota-balance funds");
+  const fs = sub.balanceFunds;
+  const known = (v) => typeof v === "number" && Number.isFinite(v);
+  const amount = (field) => fs.map((f) => {
+    const sign = ({ CNY: "¥", USD: "$" })[f.currency] || f.currency + " ";
+    return known(f[field]) ? sign + f[field].toLocaleString(intlLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (fs.length > 1 ? sign : "") + "—";
+  }).join(" · ");
+  const row = (label, text, cls) => {
+    const r = el("div", "funds-row " + cls);
+    r.append(el("span", "funds-label", t(label)), el("b", "", text));
+    b.append(r);
+    return r;
+  };
+  const grant = row("Granted balance", amount("granted"), "funds-grant");
+  if (fs.some((f) => known(f.granted) && f.granted > 0)) grant.firstChild.append(el("span", "funds-priority", t("Used first")));
+  const hint = fs.length > 1 ? "Each currency is shown separately. Grants are used before top-ups."
+    : !known(fs[0].granted) ? "Grant details are unavailable. The active funding source is unknown."
+    : fs[0].granted > 0 ? "Grants are used first, then your topped-up balance."
+    : "Grants are exhausted. Your topped-up balance is now used.";
+  b.append(el("div", "funds-hint", t(hint)));
+  row("Topped-up balance", amount("toppedUp"), "funds-cash");
+  row("Total available", sub.balance, "funds-total");
   const read = when && readWhen(sub, when === "refresh");
   if (read) b.append(read);
   return b;

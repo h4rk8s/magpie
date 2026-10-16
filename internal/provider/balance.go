@@ -301,27 +301,37 @@ func number(v any) (float64, bool) {
 
 // readDeepSeek: {"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"110.00",…}]}
 func readDeepSeek(b []byte) (string, error) {
+	amount, _, err := readDeepSeekFunds(b)
+	return amount, err
+}
+
+// readDeepSeekFunds keeps total_balance authoritative. Missing components
+// stay unknown; they are never inferred from the total or another currency.
+func readDeepSeekFunds(b []byte) (string, []BalanceFunds, error) {
 	var r struct {
 		Infos []struct {
 			Currency string `json:"currency"`
 			Total    any    `json:"total_balance"`
+			Granted  any    `json:"granted_balance"`
+			ToppedUp any    `json:"topped_up_balance"`
 		} `json:"balance_infos"`
 	}
 	if err := json.Unmarshal(b, &r); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	type amount struct {
-		code string
-		v    float64
+		code              string
+		v                 float64
+		granted, toppedUp *float64
 	}
 	var amts []amount
 	for _, in := range r.Infos {
-		if v, ok := number(in.Total); ok {
-			amts = append(amts, amount{strings.ToUpper(in.Currency), v})
+		if v, ok := number(in.Total); ok && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			amts = append(amts, amount{strings.ToUpper(in.Currency), v, balanceFundNumber(in.Granted), balanceFundNumber(in.ToppedUp)})
 		}
 	}
 	if len(amts) == 0 {
-		return "", errors.New("no balance in the reply")
+		return "", nil, errors.New("no balance in the reply")
 	}
 	// DeepSeek lists an account's currencies (CNY, USD) in an order that
 	// changes from one read to the next (gakki on Discord), so they are
@@ -339,10 +349,29 @@ func readDeepSeek(b []byte) (string, error) {
 		return strings.Compare(a.code, b.code)
 	})
 	parts := make([]string, len(amts))
+	funds := make([]BalanceFunds, len(amts))
 	for i, a := range amts {
 		parts[i] = money(currencySign(a.code), a.v)
+		funds[i] = BalanceFunds{Currency: a.code, Granted: a.granted, ToppedUp: a.toppedUp}
 	}
-	return strings.Join(parts, " · "), nil
+	return strings.Join(parts, " · "), funds, nil
+}
+
+// BalanceFunds is the remaining grant and top-up in one currency. A nil
+// component was not readable, distinct from a known zero. It is a breakdown
+// of Balance, not an additional amount or an allowance with a known cap.
+type BalanceFunds struct {
+	Currency string   `json:"currency"`
+	Granted  *float64 `json:"granted"`
+	ToppedUp *float64 `json:"toppedUp"`
+}
+
+func balanceFundNumber(v any) *float64 {
+	n, ok := number(v)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return nil
+	}
+	return &n
 }
 
 // readMoonshot: {"code":0,"data":{"available_balance":49.58,…},"status":true}
@@ -1128,7 +1157,7 @@ func balanceSegmentOf(raw, path string) (balanceSegment, error) {
 // false when there is no way to ask it. A key given limits and no quota of
 // its own has what its fullest window has left: what it can spend now.
 func Balance(ctx context.Context, p Provider) (amount string, ok bool, err error) {
-	amount, _, ws, ok, err := balanceRead(ctx, p)
+	amount, _, _, ws, ok, err := balanceRead(ctx, p)
 	if err == nil && amount == "" && len(ws) > 0 {
 		left := ws[0].Limit - ws[0].Amount
 		for _, w := range ws[1:] {
@@ -1143,19 +1172,19 @@ func Balance(ctx context.Context, p Provider) (amount string, ok bool, err error
 // the user wrote each apart (nil for a vendor magpie reads itself), and the
 // key's own usage windows when its reply tells them (a sub2api key's
 // limits, readSub2APIKeyLimits).
-func balanceRead(ctx context.Context, p Provider) (amount string, parts []BalancePart, ws []QuotaWindow, ok bool, err error) {
+func balanceRead(ctx context.Context, p Provider) (amount string, parts []BalancePart, funds []BalanceFunds, ws []QuotaWindow, ok bool, err error) {
 	ctx = p.Via(ctx)
 	p = keyQueryOf(p)
 	src, ok := balanceSourceOf(p)
 	if !ok || p.Account != nil || p.Key == "" {
-		return "", nil, nil, false, nil
+		return "", nil, nil, nil, false, nil
 	}
 	if src.token != "" && p.BalanceURL != "" {
 		switch balanceURLPath(p.BalanceURL) {
 		case newAPIKeyUsage:
-			return "", nil, nil, true, errKeyUsageWithToken(p.BalanceURL)
+			return "", nil, nil, nil, true, errKeyUsageWithToken(p.BalanceURL)
 		case sub2APIKeyUsage:
-			return "", nil, nil, true, errSub2APIKeyUsageWithToken(p.BalanceURL)
+			return "", nil, nil, nil, true, errSub2APIKeyUsageWithToken(p.BalanceURL)
 		}
 	}
 	method := http.MethodGet
@@ -1163,12 +1192,12 @@ func balanceRead(ctx context.Context, p Provider) (amount string, parts []Balanc
 		// the method the user named goes with their own Balance URL only;
 		// a vendor magpie knows is asked as it answers
 		if method, err = balanceMethodOf(p.BalanceMethod); err != nil {
-			return "", nil, nil, true, err
+			return "", nil, nil, nil, true, err
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, withBalanceKey(src.url, p.Key, true), nil)
 	if err != nil {
-		return "", nil, nil, true, err
+		return "", nil, nil, nil, true, err
 	}
 	if src.token != "" {
 		// a named endpoint still gets the provider's headers, which is
@@ -1192,9 +1221,9 @@ func balanceRead(ctx context.Context, p Provider) (amount string, parts []Balanc
 	if err != nil {
 		if k := url.QueryEscape(p.Key); k != "" && strings.Contains(err.Error(), k) {
 			// the URL in the error has the key in it: not shown on a card
-			return "", nil, nil, true, errors.New(strings.ReplaceAll(err.Error(), k, Mask(p.Key)))
+			return "", nil, nil, nil, true, errors.New(strings.ReplaceAll(err.Error(), k, Mask(p.Key)))
 		}
-		return "", nil, nil, true, err
+		return "", nil, nil, nil, true, err
 	}
 	defer res.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
@@ -1205,23 +1234,23 @@ func balanceRead(ctx context.Context, p Provider) (amount string, parts []Balanc
 		if res.StatusCode >= 300 {
 			msg = res.Status + ": " + msg
 		}
-		return "", nil, nil, true, errors.New(msg)
+		return "", nil, nil, nil, true, errors.New(msg)
 	}
 	if res.StatusCode >= 300 && src.failed != nil {
 		if err := src.failed(res.StatusCode, b); err != nil {
-			return "", nil, nil, true, err
+			return "", nil, nil, nil, true, err
 		}
 	}
 	if res.StatusCode >= 300 {
 		// what a JSON reply says, on one line; a page of HTML says nothing
 		msg := strings.Join(strings.Fields(string(b)), " ")
 		if !strings.HasPrefix(msg, "{") {
-			return "", nil, nil, true, errors.New(res.Status)
+			return "", nil, nil, nil, true, errors.New(res.Status)
 		}
 		if r := []rune(msg); len(r) > 200 {
 			msg = string(r[:200]) + "…"
 		}
-		return "", nil, nil, true, fmt.Errorf("%s: %s", res.Status, msg)
+		return "", nil, nil, nil, true, fmt.Errorf("%s: %s", res.Status, msg)
 	}
 	if p.BalanceURL != "" {
 		if sub2APIKeyLimits(p) {
@@ -1232,14 +1261,18 @@ func balanceRead(ctx context.Context, p Provider) (amount string, parts []Balanc
 			if len(ws) > 0 && strings.TrimSpace(p.BalancePath) == "" {
 				// a key given limits and no quota of its own has no
 				// "remaining": its windows are what it has left
-				return "", nil, ws, true, nil
+				return "", nil, nil, ws, true, nil
 			}
-			return "", nil, nil, true, err
+			return "", nil, nil, nil, true, err
 		}
-		return joinBalanceParts(parts), parts, ws, true, nil
+		return joinBalanceParts(parts), parts, nil, ws, true, nil
+	}
+	if src.url == "https://api.deepseek.com/user/balance" {
+		amount, funds, err = readDeepSeekFunds(b)
+		return amount, nil, funds, nil, true, err
 	}
 	amount, err = src.read(b)
-	return amount, nil, nil, true, err
+	return amount, nil, nil, nil, true, err
 }
 
 // balanceMethodOf is the HTTP method a Balance URL is asked with: GET
@@ -1402,7 +1435,7 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 				out[i] = keepReading(ctx, q, keyTag("balance", j.p.Key))
 				return
 			}
-			amount, parts, ws, _, err := balanceRead(ctx, j.p)
+			amount, parts, funds, ws, _, err := balanceRead(ctx, j.p)
 			if errors.Is(err, errNoBalance) {
 				return // a reply with no balance for this key: no card
 			}
@@ -1411,6 +1444,7 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 			} else {
 				q.Balance = amount
 				q.BalanceParts = cardParts(parts)
+				q.BalanceFunds = funds
 				q.Windows = append(q.Windows, ws...)
 				now := time.Now()
 				q.ReadAt = &now

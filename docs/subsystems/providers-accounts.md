@@ -266,3 +266,27 @@ real `~/.codex`, `~/.claude`, `~/.config/gcloud` or `~/.config/magpie` files.
 Vertex AI's tests send Vertex AI, Google's token endpoint and IAM Credentials
 to a server of their own (`VertexForTest`). Check a change
 against real accounts in a sandbox HOME, as [Code standards](../code-standards.md#acceptance-criteria) describes.
+
+## DeepSeek grant and top-up balances
+
+The built-in `api.deepseek.com/user/balance` reader (`readDeepSeekFunds` in
+[`balance.go`](../../internal/provider/balance.go)) carries the vendor's
+`granted_balance` and `topped_up_balance` as `SubscriptionQuota.balanceFunds`,
+separately for each currency, in the same order as the total. A missing or
+unreadable component is JSON null, never zero or an inferred difference.
+`total_balance` remains the source for `Balance`, alerts, key sums and balance
+history; components are not added to it. Custom Balance URL/field readers keep
+the user's chosen meaning and do not acquire this breakdown.
+
+Usage and the menu-bar Allowances panel show grants first, then top-ups and
+the total. Grants are used first; they are not a capped window: the API does
+not give their initial amount or expiry, so no percentage or expiry is
+invented. The existing trend follows total available funds in its original
+currency. A fall can include expired grants, so its fitted rate is not a
+receipt of spending. Cached/stale cards retain their breakdown and timestamp;
+a successful response missing components replaces them with unknown values.
+
+Verification: `TestDeepSeekFunds`, `TestDeepSeekFundsCards` and
+`internal/gui/tests/deepseek-funds.test.cjs`, alongside the existing balance
+history, currency, custom-parts and card-cache tests. The field contract is
+[DeepSeek's balance API](https://api-docs.deepseek.com/api/get-user-balance/).

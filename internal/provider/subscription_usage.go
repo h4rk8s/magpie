@@ -114,6 +114,9 @@ type SubscriptionQuota struct {
 	// BalanceParts are the Balance's amounts each apart, when the balance
 	// field the user wrote has several or a percent (cardParts)
 	BalanceParts []BalancePart `json:"balanceParts,omitempty"`
+	// BalanceFunds breaks Balance into grants and top-ups, without changing
+	// the total used by routing, alerts or balance history.
+	BalanceFunds []BalanceFunds `json:"balanceFunds,omitempty"`
 	// BalanceTrend is the Balance over time, as magpie read it, and when
 	// it runs out at that pace (balance_history.go)
 	BalanceTrend *BalanceTrend `json:"balanceTrend,omitempty"`
